@@ -326,6 +326,11 @@ class FlashPanel(wx.Panel):
         if self.options["cal"] != "":
             self.current_folder_path = self.options["cal"]
             self.update_bin_listing()
+            
+    # Helper method to append text with a timestamp
+    def append_feedback(self, text: str):
+        timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S] ")
+        self.feedback_text.AppendText(timestamp + text)
 
     def set_item_style(self, event, selected):
         self.list_ctrl.SetItemFont(
@@ -352,7 +357,7 @@ class FlashPanel(wx.Panel):
         )
 
         [
-            self.feedback_text.AppendText(did + " : " + ecu_info[did] + "\n")
+            self.append_feedback(did + " : " + ecu_info[did] + "\n")
             for did in ecu_info
         ]
 
@@ -365,7 +370,7 @@ class FlashPanel(wx.Panel):
             interface_path=interface_path,
         )
         [
-            self.feedback_text.AppendText(str(dtc) + " : " + dtcs[dtc] + "\n")
+            self.append_feedback(str(dtc) + " : " + dtcs[dtc] + "\n")
             for dtc in dtcs
         ]
 
@@ -373,12 +378,12 @@ class FlashPanel(wx.Panel):
         if module_selection_is_dq250(
             self.module_choice.GetSelection()
         ) or module_selection_is_dq381(self.module_choice.GetSelection()) or module_selection_is_haldex(self.module_choice.GetSelection()):
-            self.feedback_text.AppendText("SKIPPED: Unlocking is unnecessary for Haldex/DSG\n")
+            self.append_feedback("SKIPPED: Unlocking is unnecessary for Haldex/DSG\n")
             return
 
         input_bytes = Path(selected_file).read_bytes()
         if str.endswith(selected_file, ".frf"):
-            self.feedback_text.AppendText("Extracting FRF for unlock...\n")
+            self.append_feedback("Extracting FRF for unlock...\n")
             (flash_data, allowed_boxcodes,) = extract_flash.extract_flash_from_frf(
                 input_bytes,
                 self.flash_info,
@@ -403,7 +408,7 @@ class FlashPanel(wx.Panel):
                 file_box_code.strip()
                 != self.flash_info.patch_info.patch_box_code.split("_")[0].strip()
             ):
-                self.feedback_text.AppendText(
+                self.append_feedback(
                     f"Boxcode mismatch for unlocking. Got box code {file_box_code} but expected {self.flash_info.patch_info.patch_box_code}. Please don't try to be clever. Supply the correct file and the process will work."
                 )
                 return
@@ -420,14 +425,14 @@ class FlashPanel(wx.Panel):
             self.input_blocks = input_blocks_with_patch
             self.flash_bin(get_info=False)
         else:
-            self.feedback_text.AppendText(
+            self.append_feedback(
                 "File did not appear to be a valid FRF. Unlocking is possible only with a specific FRF file for your ECU family.\n"
             )
 
     def flash_bin_file(self, selected_file, patch_cboot=False):
         input_bytes = Path(self.row_obj_dict[selected_file]).read_bytes()
         if str.endswith(self.row_obj_dict[selected_file], ".frf"):
-            self.feedback_text.AppendText("Extracting FRF...\n")
+            self.append_feedback("Extracting FRF...\n")
             (flash_data, allowed_boxcodes,) = extract_flash.extract_flash_from_frf(
                 input_bytes,
                 self.flash_info,
@@ -446,7 +451,7 @@ class FlashPanel(wx.Panel):
             )
             self.flash_bin(get_info=False, should_patch_cboot=patch_cboot)
         else:
-            self.feedback_text.AppendText(
+            self.append_feedback(
                 "File did not appear to be a valid BIN or FRF\n"
             )
 
@@ -454,7 +459,7 @@ class FlashPanel(wx.Panel):
         # We're expecting a "FlashPack" ZIP
         with ZipFile(self.row_obj_dict[selected_file], "r") as zip_archive:
             if "file_list.json" not in zip_archive.namelist():
-                self.feedback_text.AppendText(
+                self.append_feedback(
                     "SKIPPING: No file listing found in archive\n"
                 )
 
@@ -482,7 +487,7 @@ class FlashPanel(wx.Panel):
             )
         except Exception as e:
             # If there is an issue with extracting the blocks, log the error and return
-            self.feedback_text.AppendText(f"Error extracting blocks from binary: {str(e)}\n")
+            self.append_feedback(f"Error extracting blocks from binary: {str(e)}\n")
             return
 
         # Check if the extracted blocks contain the CAL block
@@ -490,7 +495,7 @@ class FlashPanel(wx.Panel):
 
         if cal_block_number and any(block.block_number == cal_block_number for block in input_blocks.values()):
             # Notify the user that the Calibration block is being flashed
-            self.feedback_text.AppendText("Flashing CAL block...\n")
+            self.append_feedback("Flashing CAL block...\n")
 
             # Keep only the CAL block and possibly the DRIVER block for DQ250 DSG
             self.input_blocks = {
@@ -505,11 +510,11 @@ class FlashPanel(wx.Panel):
 
             # If DQ250 DSG transmission is selected, notify the user about DRIVER flashing
             if module_selection_is_dq250(self.module_choice.GetSelection()):
-                self.feedback_text.AppendText("Flashing DRIVER block for DQ250 DSG...\n")
+                self.append_feedback("Flashing DRIVER block for DQ250 DSG...\n")
 
         else:
             # If no CAL block is found, show an error and stop processing
-            self.feedback_text.AppendText("Error: CAL block not found in the binary file. You may be providing the wrong file for the selected module\n")
+            self.append_feedback("Error: CAL block not found in the binary file. You may be providing the wrong file for the selected module\n")
             return
 
         # Call the flash_bin function to initiate the flashing process for the loaded blocks
@@ -518,7 +523,7 @@ class FlashPanel(wx.Panel):
     def on_flash(self, event):
         selected_file = self.list_ctrl.GetFirstSelected()
         if selected_file == -1:
-            self.feedback_text.AppendText("SKIPPING: Select a file to flash!\n")
+            self.append_feedback("SKIPPING: Select a file to flash!\n")
             return
 
         file_name = str(self.row_obj_dict[selected_file])
@@ -609,7 +614,7 @@ class FlashPanel(wx.Panel):
     def threaded_callback(self, step, status, progress):
         self.GetParent().statusbar.SetStatusText(step)
         self.progress_bar.SetValue(round(float(progress)))
-        self.feedback_text.AppendText(
+        self.append_feedback(
             step + " - " + status + " - " + str(progress) + "\n"
         )
 
@@ -635,7 +640,7 @@ class FlashPanel(wx.Panel):
         else:
             flash_utils = simos_flash_utils
 
-        self.feedback_text.AppendText(
+        self.append_feedback(
             "Starting to flash the following software components : \n"
             + binfile.input_block_info(self.input_blocks, self.flash_info)
             + "\n"
@@ -650,7 +655,7 @@ class FlashPanel(wx.Panel):
             )
 
             [
-                self.feedback_text.AppendText(did + " : " + ecu_info[did] + "\n")
+                self.append_feedback(did + " : " + ecu_info[did] + "\n")
                 for did in ecu_info
             ]
 
@@ -682,7 +687,7 @@ class FlashPanel(wx.Panel):
                 is not True
                 and ecu_info["VW Spare Part Number"].strip() != fileBoxCode.strip()
             ):
-                self.feedback_text.AppendText(
+                self.append_feedback(
                     "Attempting to flash a file that doesn't match box codes, exiting!: "
                     + ecu_info["VW Spare Part Number"]
                     + " != "
