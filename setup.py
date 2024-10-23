@@ -1,4 +1,4 @@
-from distutils.core import setup
+from setuptools import setup
 import py2exe
 import lib
 
@@ -12,4 +12,7 @@ data_files = [
     ("logs", ["logs/config.yaml", "logs/parameters.yaml"]),
 ]
 
-setup(console=["VW_Flash_GUI.py"], data_files=data_files)
+setup(
+    console=["VW_Flash_GUI.py"],
+    data_files=data_files,
+)

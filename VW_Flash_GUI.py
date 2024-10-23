@@ -82,14 +82,28 @@ def split_interface_name(interface_string: str):
 def get_dlls_from_registry():
     # Interfaces is a list of tuples (name: str, interface specifier: str)
     interfaces = []
-    try:
-        BaseKey = winreg.OpenKeyEx(
-            winreg.HKEY_LOCAL_MACHINE, r"Software\\PassThruSupport.04.04\\"
-        )
-    except:
-        logger.error("No J2534 DLLs found in HKLM PassThruSupport. Continuing anyway.")
+    
+    # Define the two possible registry paths
+    base_registry_paths = [
+        r"Software\PassThruSupport.04.04",                # Regular registry path
+        r"Software\WOW6432Node\PassThruSupport.04.04"     # WOW6432Node registry path for 32-bit apps
+    ]
+    
+    for registry_path in base_registry_paths:
+        try:
+            BaseKey = winreg.OpenKeyEx(
+                winreg.HKEY_LOCAL_MACHINE, registry_path
+            )
+            logger.info(f"Found J2534 DLLs in {registry_path}.")
+            break  # If this path is found, no need to check the other path
+        except:
+            logger.warning(f"No J2534 DLLs found in {registry_path}. Trying next.")
+            continue
+    else:
+        logger.error("No J2534 DLLs found in either registry path. Continuing anyway.")
         return interfaces
 
+    # If BaseKey is found, query for the available devices
     for i in range(winreg.QueryInfoKey(BaseKey)[0]):
         try:
             DeviceKey = winreg.OpenKeyEx(BaseKey, winreg.EnumKey(BaseKey, i))
@@ -100,7 +114,9 @@ def get_dlls_from_registry():
             logger.error(
                 "Found a J2534 interface, but could not enumerate the registry entry. Continuing."
             )
+    
     return interfaces
+
 
 
 def socketcan_ports():
@@ -456,44 +472,47 @@ class FlashPanel(wx.Panel):
 
     def flash_cal(self, selected_file: str):
         # Flash a Calibration block only
+        # Initialize an empty dictionary to store the blocks to be flashed
         self.input_blocks = {}
 
-        input_bytes = Path(self.row_obj_dict[selected_file]).read_bytes()
-        if len(input_bytes) == self.flash_info.binfile_size:
-            self.feedback_text.AppendText(
-                "Extracting Calibration from full binary...\n"
-            )
-            if module_selection_is_dq250(self.module_choice.GetSelection()):
-                self.feedback_text.AppendText("Extracting Driver from full binary...\n")
+        try:
+            # Extract blocks from the binary file using blocks_from_bin
             input_blocks = binfile.blocks_from_bin(
                 self.row_obj_dict[selected_file], self.flash_info
             )
-            # Filter to only CAL block.
+        except Exception as e:
+            # If there is an issue with extracting the blocks, log the error and return
+            self.feedback_text.AppendText(f"Error extracting blocks from binary: {str(e)}\n")
+            return
+
+        # Check if the extracted blocks contain the CAL block
+        cal_block_number = self.flash_info.block_name_to_number.get("CAL")
+
+        if cal_block_number and any(block.block_number == cal_block_number for block in input_blocks.values()):
+            # Notify the user that the Calibration block is being flashed
+            self.feedback_text.AppendText("Flashing CAL block...\n")
+
+            # Keep only the CAL block and possibly the DRIVER block for DQ250 DSG
             self.input_blocks = {
-                k: v
-                for k, v in input_blocks.items()
-                if (v.block_number == self.flash_info.block_name_to_number["CAL"])
+                filename: block
+                for filename, block in input_blocks.items()
+                if block.block_number == cal_block_number
                 or (
                     module_selection_is_dq250(self.module_choice.GetSelection())
-                    and v.block_number == self.flash_info.block_name_to_number["DRIVER"]
+                    and block.block_number == self.flash_info.block_name_to_number.get("DRIVER")
                 )
             }
-        else:
-            if module_selection_is_dq250(self.module_choice.GetSelection()):
-                # Populate DSG Driver block from a fixed file name if it's a CAL only bin
-                dsg_driver_path = path.join(self.options["cal"], "FD_2.DRIVER.bin")
-                self.feedback_text.AppendText(
-                    "Loading DSG Driver from: " + dsg_driver_path + "\n"
-                )
-                self.input_blocks["FD_2.DRIVER.bin"] = constants.BlockData(
-                    self.flash_info.block_name_to_number["DRIVER"],
-                    Path(dsg_driver_path).read_bytes(),
-                )
-            self.input_blocks[self.row_obj_dict[selected_file]] = constants.BlockData(
-                self.flash_info.block_name_to_number["CAL"],
-                input_bytes,
-            )
 
+            # If DQ250 DSG transmission is selected, notify the user about DRIVER flashing
+            if module_selection_is_dq250(self.module_choice.GetSelection()):
+                self.feedback_text.AppendText("Flashing DRIVER block for DQ250 DSG...\n")
+
+        else:
+            # If no CAL block is found, show an error and stop processing
+            self.feedback_text.AppendText("Error: CAL block not found in the binary file. You may be providing the wrong file for the selected module\n")
+            return
+
+        # Call the flash_bin function to initiate the flashing process for the loaded blocks
         self.flash_bin()
 
     def on_flash(self, event):
