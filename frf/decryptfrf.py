@@ -6,6 +6,7 @@ import io
 import os
 from lib import constants
 
+
 # Implements a goofy "recursive xor" cypher used to encrypt FRF files, which at the end of the day are ZIP files containing either SGO (binary flash data) or ODX data.
 def decrypt_data(key_material: bytes, encrypted_data: bytes):
     output_data = bytearray()

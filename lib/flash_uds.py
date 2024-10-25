@@ -164,6 +164,7 @@ def flash_block(
 
     if (len(tuner_tag) > 0) and (block_number > 1):
         detailedLogger.info("Sending tuner ASW magic number...")
+
         # Send Magic
         # In the case of a tuned CBOOT, send tune-specific magic bytes after this 3E to force-overwrite the CAL validity area.
         def tuner_payload(payload, tune_block_number=block_number):

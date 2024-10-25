@@ -1,5 +1,6 @@
 import asyncio
 import glob
+import os
 from pathlib import Path
 import wx
 import os.path as path
@@ -35,7 +36,7 @@ from lib.modules import (
     dq381,
     simos16,
     simosshared,
-    haldex4motion
+    haldex4motion,
 )
 
 DEFAULT_STMIN = 350000
@@ -69,8 +70,10 @@ def module_selection_is_dq250(selection_index):
 def module_selection_is_dq381(selection_index):
     return selection_index == 3
 
+
 def module_selection_is_haldex(selected_index):
     return selected_index == 4
+
 
 def split_interface_name(interface_string: str):
     parts = interface_string.split("_", 1)
@@ -82,18 +85,16 @@ def split_interface_name(interface_string: str):
 def get_dlls_from_registry():
     # Interfaces is a list of tuples (name: str, interface specifier: str)
     interfaces = []
-    
+
     # Define the two possible registry paths
     base_registry_paths = [
-        r"Software\PassThruSupport.04.04",                # Regular registry path
-        r"Software\WOW6432Node\PassThruSupport.04.04"     # WOW6432Node registry path for 32-bit apps
+        r"Software\PassThruSupport.04.04",  # Regular registry path
+        r"Software\WOW6432Node\PassThruSupport.04.04",  # WOW6432Node registry path for 32-bit apps
     ]
-    
+
     for registry_path in base_registry_paths:
         try:
-            BaseKey = winreg.OpenKeyEx(
-                winreg.HKEY_LOCAL_MACHINE, registry_path
-            )
+            BaseKey = winreg.OpenKeyEx(winreg.HKEY_LOCAL_MACHINE, registry_path)
             logger.info(f"Found J2534 DLLs in {registry_path}.")
             break  # If this path is found, no need to check the other path
         except:
@@ -114,9 +115,8 @@ def get_dlls_from_registry():
             logger.error(
                 "Found a J2534 interface, but could not enumerate the registry entry. Continuing."
             )
-    
-    return interfaces
 
+    return interfaces
 
 
 def socketcan_ports():
@@ -326,7 +326,7 @@ class FlashPanel(wx.Panel):
         if self.options["cal"] != "":
             self.current_folder_path = self.options["cal"]
             self.update_bin_listing()
-            
+
     # Helper method to append text with a timestamp
     def append_feedback(self, text: str):
         timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S] ")
@@ -344,22 +344,31 @@ class FlashPanel(wx.Panel):
             simos1810.s1810_flash_info,
             dq250mqb.dsg_flash_info,
             dq381.dsg_flash_info,
-            haldex4motion.haldex_flash_info
+            haldex4motion.haldex_flash_info,
         ][module_number]
 
     def on_get_info(self, event):
-        (interface, interface_path) = split_interface_name(self.options["interface"])
-        ecu_info = flash_uds.read_ecu_data(
-            self.flash_info,
-            interface=interface,
-            callback=self.update_callback,
-            interface_path=interface_path,
-        )
+        try:
+            (interface, interface_path) = split_interface_name(
+                self.options["interface"]
+            )
+            ecu_info = flash_uds.read_ecu_data(
+                self.flash_info,
+                interface=interface,
+                callback=self.update_callback,
+                interface_path=interface_path,
+            )
 
-        [
-            self.append_feedback(did + " : " + ecu_info[did] + "\n")
-            for did in ecu_info
-        ]
+            [
+                self.append_feedback(did + " : " + ecu_info[did] + "\n")
+                for did in ecu_info
+            ]
+        except Exception as e:
+            # Handle the exception, log the error, and show an error message to the user
+            logger.error(f"Error reading ECU data: {e}")
+            wx.MessageBox(
+                f"Failed to read ECU data: {e}", "Error", wx.OK | wx.ICON_ERROR
+            )
 
     def on_read_dtcs(self, event):
         (interface, interface_path) = split_interface_name(self.options["interface"])
@@ -369,22 +378,24 @@ class FlashPanel(wx.Panel):
             callback=self.update_callback,
             interface_path=interface_path,
         )
-        [
-            self.append_feedback(str(dtc) + " : " + dtcs[dtc] + "\n")
-            for dtc in dtcs
-        ]
+        [self.append_feedback(str(dtc) + " : " + dtcs[dtc] + "\n") for dtc in dtcs]
 
     def flash_unlock(self, selected_file):
-        if module_selection_is_dq250(
-            self.module_choice.GetSelection()
-        ) or module_selection_is_dq381(self.module_choice.GetSelection()) or module_selection_is_haldex(self.module_choice.GetSelection()):
+        if (
+            module_selection_is_dq250(self.module_choice.GetSelection())
+            or module_selection_is_dq381(self.module_choice.GetSelection())
+            or module_selection_is_haldex(self.module_choice.GetSelection())
+        ):
             self.append_feedback("SKIPPED: Unlocking is unnecessary for Haldex/DSG\n")
             return
 
         input_bytes = Path(selected_file).read_bytes()
         if str.endswith(selected_file, ".frf"):
             self.append_feedback("Extracting FRF for unlock...\n")
-            (flash_data, allowed_boxcodes,) = extract_flash.extract_flash_from_frf(
+            (
+                flash_data,
+                allowed_boxcodes,
+            ) = extract_flash.extract_flash_from_frf(
                 input_bytes,
                 self.flash_info,
                 is_dsg=module_selection_is_dq250(self.module_choice.GetSelection()),
@@ -433,7 +444,10 @@ class FlashPanel(wx.Panel):
         input_bytes = Path(self.row_obj_dict[selected_file]).read_bytes()
         if str.endswith(self.row_obj_dict[selected_file], ".frf"):
             self.append_feedback("Extracting FRF...\n")
-            (flash_data, allowed_boxcodes,) = extract_flash.extract_flash_from_frf(
+            (
+                flash_data,
+                allowed_boxcodes,
+            ) = extract_flash.extract_flash_from_frf(
                 input_bytes,
                 self.flash_info,
                 is_dsg=module_selection_is_dq250(self.module_choice.GetSelection()),
@@ -447,21 +461,19 @@ class FlashPanel(wx.Panel):
             self.flash_bin(get_info=False, should_patch_cboot=patch_cboot)
         elif len(input_bytes) == self.flash_info.binfile_size:
             self.input_blocks = binfile.blocks_from_bin(
-                self.row_obj_dict[selected_file], self.flash_info, module_selection_is_haldex(self.module_choice.GetSelection())
+                self.row_obj_dict[selected_file],
+                self.flash_info,
+                module_selection_is_haldex(self.module_choice.GetSelection()),
             )
             self.flash_bin(get_info=False, should_patch_cboot=patch_cboot)
         else:
-            self.append_feedback(
-                "File did not appear to be a valid BIN or FRF\n"
-            )
+            self.append_feedback("File did not appear to be a valid BIN or FRF\n")
 
     def flash_flashpack(self, selected_file: str):
         # We're expecting a "FlashPack" ZIP
         with ZipFile(self.row_obj_dict[selected_file], "r") as zip_archive:
             if "file_list.json" not in zip_archive.namelist():
-                self.append_feedback(
-                    "SKIPPING: No file listing found in archive\n"
-                )
+                self.append_feedback("SKIPPING: No file listing found in archive\n")
 
             else:
                 with zip_archive.open("file_list.json") as file_list_json:
@@ -493,7 +505,9 @@ class FlashPanel(wx.Panel):
         # Check if the extracted blocks contain the CAL block
         cal_block_number = self.flash_info.block_name_to_number.get("CAL")
 
-        if cal_block_number and any(block.block_number == cal_block_number for block in input_blocks.values()):
+        if cal_block_number and any(
+            block.block_number == cal_block_number for block in input_blocks.values()
+        ):
             # Notify the user that the Calibration block is being flashed
             self.append_feedback("Flashing CAL block...\n")
 
@@ -504,7 +518,8 @@ class FlashPanel(wx.Panel):
                 if block.block_number == cal_block_number
                 or (
                     module_selection_is_dq250(self.module_choice.GetSelection())
-                    and block.block_number == self.flash_info.block_name_to_number.get("DRIVER")
+                    and block.block_number
+                    == self.flash_info.block_name_to_number.get("DRIVER")
                 )
             }
 
@@ -514,7 +529,9 @@ class FlashPanel(wx.Panel):
 
         else:
             # If no CAL block is found, show an error and stop processing
-            self.append_feedback("Error: CAL block not found in the binary file. You may be providing the wrong file for the selected module\n")
+            self.append_feedback(
+                "Error: CAL block not found in the binary file. You may be providing the wrong file for the selected module\n"
+            )
             return
 
         # Call the flash_bin function to initiate the flashing process for the loaded blocks
@@ -614,9 +631,7 @@ class FlashPanel(wx.Panel):
     def threaded_callback(self, step, status, progress):
         self.GetParent().statusbar.SetStatusText(step)
         self.progress_bar.SetValue(round(float(progress)))
-        self.append_feedback(
-            step + " - " + status + " - " + str(progress) + "\n"
-        )
+        self.append_feedback(step + " - " + status + " - " + str(progress) + "\n")
 
     def update_callback(self, **kwargs):
         if "flasher_step" in kwargs:
@@ -716,7 +731,16 @@ class FlashPanel(wx.Panel):
 
 class VW_Flash_Frame(wx.Frame):
     def __init__(self):
-        wx.Frame.__init__(self, parent=None, title="VW_Flash GUI", size=(640, 770))
+        # Fetch the app title from an environment variable, defaulting to "VW_Flash GUI" if the variable is not set
+        app_title = os.getenv("APP_TITLE", "VW_Flash GUI")
+
+        # Get the current date and time in the format YYMMDDHH
+        current_datetime = datetime.now().strftime("%y%m%d%H")
+
+        # Set the title of the window using the environment variable and append the formatted current datetime
+        full_title = f"{app_title} - {current_datetime}"
+
+        wx.Frame.__init__(self, parent=None, title=full_title, size=(640, 770))
         self.panel = FlashPanel(self)
         self.create_menu()
         self.statusbar = self.CreateStatusBar(1)
@@ -911,7 +935,6 @@ class VW_Flash_Frame(wx.Frame):
             self.hsl_logger.stop()
             self.hsl_logger = None
 
-
     def on_select_interface(self, event):
         progress_dialog = wx.ProgressDialog(
             "Scanning for devices...",
@@ -1018,6 +1041,7 @@ class VW_Flash_Frame(wx.Frame):
                 frf_thread.start()
                 progress_dialog.Pulse()
                 progress_dialog.Show()
+
 
 if __name__ == "__main__":
     app = wx.App(False)
