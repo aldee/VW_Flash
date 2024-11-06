@@ -1,24 +1,24 @@
-from pathlib import Path
-import tqdm
-import logging
 import argparse
+import logging
+import shutil
 import sys
 from os import path
+from pathlib import Path
 
-from lib.extract_flash import extract_flash_from_frf
+import tqdm
+
+import lib.binfile as binfile
+import lib.dq381_flash_utils as dq381_flash_utils
+import lib.dsg_flash_utils as dsg_flash_utils
+import lib.flash_uds as flash_uds
+import lib.haldex_flash_utils as haldex_flash_utils
+import lib.simos_flash_utils as simos_flash_utils
 from lib.constants import (
     BlockData,
     PreparedBlockData,
     FlashInfo,
 )
-import lib.binfile as binfile
-import lib.simos_flash_utils as simos_flash_utils
-import lib.dq381_flash_utils as dq381_flash_utils
-import lib.dsg_flash_utils as dsg_flash_utils
-import lib.haldex_flash_utils as haldex_flash_utils
-
-import lib.flash_uds as flash_uds
-
+from lib.extract_flash import extract_flash_from_frf
 from lib.modules import (
     simos8,
     simos10,
@@ -32,9 +32,7 @@ from lib.modules import (
     simos16,
     haldex4motion,
 )
-
 from lib.simos_hsl import hsl_logger
-import shutil
 
 # Get an instance of logger, which we'll pull from the config file
 logger = logging.getLogger("VWFlash")
@@ -44,7 +42,7 @@ try:
 except NameError:  # We are the main py2exe script, not a module
     currentPath = path.dirname(path.abspath(sys.argv[0]))
 
-logging.config.fileConfig(path.join(currentPath, "logging.conf"))
+logging.config.fileConfig(path.join(currentPath, "logging.ini"))
 
 logger.info("Starting VW_Flash.py")
 
@@ -132,7 +130,6 @@ parser.add_argument("--simos122", help="specify simos12.2", action="store_true")
 parser.add_argument("--simos16", help="specify simos16", action="store_true")
 parser.add_argument("--simos1810", help="specify simos18.10", action="store_true")
 parser.add_argument("--simos1841", help="specify simos18.41", action="store_true")
-
 
 parser.add_argument(
     "--is_early", help="specify an early car for ECM3 checksumming", action="store_true"

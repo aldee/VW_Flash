@@ -1,20 +1,21 @@
 import argparse
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import csv
 import itertools
 import sys
-from lib import binfile
-from lib import constants
-from lib import checksum
-from lib.extract_flash import extract_odx_from_frf, extract_data_from_odx
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+
+from lib import binfile
+from lib import checksum
+from lib import constants
+from lib.extract_flash import extract_odx_from_frf, extract_data_from_odx
+from lib.modules import simos10
+from lib.modules import simos12
+from lib.modules import simos122
+from lib.modules import simos16
 from lib.modules import simos18
 from lib.modules import simos1810
 from lib.modules import simos184
-from lib.modules import simos16
-from lib.modules import simos12
-from lib.modules import simos122
-from lib.modules import simos10
 from lib.modules import simos8
 
 
@@ -156,9 +157,13 @@ def process_data(data: bytes, is_bin=False):
                 for block_number in flash_info.block_names_frf.keys():
                     flash_blocks[block_number] = constants.BlockData(
                         block_number,
-                        flash_data[flash_info.block_names_frf[block_number]].block_bytes
-                        if is_bin
-                        else flash_data[flash_info.block_names_frf[block_number]],
+                        (
+                            flash_data[
+                                flash_info.block_names_frf[block_number]
+                            ].block_bytes
+                            if is_bin
+                            else flash_data[flash_info.block_names_frf[block_number]]
+                        ),
                         block_name=flash_info.number_to_block_name[block_number],
                     )
 

@@ -1,7 +1,8 @@
-from enum import Enum
 import os
 import sys
+from enum import Enum
 from typing import Callable, List
+
 from lib.crypto.crypto_interface import CryptoInterface
 
 
@@ -238,7 +239,6 @@ data_records: List[DataRecord] = [
 j2534DLL = (
     "C:/Program Files (x86)/OpenECU/OpenPort 2.0/drivers/openport 2.0/op20pt32.dll"
 )
-
 
 ### test data for the FakeConnection
 

@@ -1,26 +1,24 @@
-import sys
 import logging
+import sys
 import time
+from typing import Union
+
 import udsoncan
-from . import constants
-from . import dtc_handler
-from .connections.connection_setup import connection_setup
-from datetime import date
 from sa2_seed_key.sa2_seed_key import Sa2SeedKey
-from typing import List, Union
-from udsoncan.client import Client
-from udsoncan.client import Routine
+from udsoncan import Dtc, InvalidResponseException
 from udsoncan import configs
 from udsoncan import exceptions
 from udsoncan import services
-from udsoncan import Dtc
+from udsoncan.client import Client
+from udsoncan.client import Routine
 
+from . import constants
+from . import dtc_handler
+from .connections.connection_setup import connection_setup
 from .workshop_code import WorkshopCodeCodec
 
-from typing import Union
-
 if sys.platform == "win32":
-    from .connections.j2534_connection import J2534Connection
+    pass
 
 logger = logging.getLogger("SimosFlashHistory")
 detailedLogger = logging.getLogger("SimosUDSDetail")
@@ -164,6 +162,7 @@ def flash_block(
 
     if (len(tuner_tag) > 0) and (block_number > 1):
         detailedLogger.info("Sending tuner ASW magic number...")
+
         # Send Magic
         # In the case of a tuned CBOOT, send tune-specific magic bytes after this 3E to force-overwrite the CAL validity area.
         def tuner_payload(payload, tune_block_number=block_number):
@@ -422,9 +421,18 @@ def flash_blocks(
                 )
 
             detailedLogger.info("Opening extended diagnostic session...")
-            client.change_session(
-                services.DiagnosticSessionControl.Session.extendedDiagnosticSession
-            )
+            try:
+                client.change_session(
+                    services.DiagnosticSessionControl.Session.extendedDiagnosticSession
+                )
+            except InvalidResponseException:
+                if callback:
+                    callback(
+                        flasher_step="FAILED",
+                        flasher_status="Can't establish a connection with the car. Make sure you're connected to the car's OBD port",
+                        flasher_progress=100,
+                    )
+                raise
 
             vin_did = constants.data_records[0]
             vin: str = read_data_or_empty(client, vin_did.address)
@@ -628,12 +636,28 @@ def read_dtcs(
         if callback:
             callback(
                 flasher_step="READING",
+                flasher_status="Connecting to vehicle",
+                flasher_progress=0,
+            )
+        try:
+            client.change_session(
+                services.DiagnosticSessionControl.Session.extendedDiagnosticSession
+            )
+        except InvalidResponseException:
+            if callback:
+                callback(
+                    flasher_step="FAILED",
+                    flasher_status="Can't establish a connection with the car. Make sure you're connected to the car's OBD port",
+                    flasher_progress=100,
+                )
+            raise
+
+        if callback:
+            callback(
+                flasher_step="READING",
                 flasher_status="Connected",
                 flasher_progress=50,
             )
-        client.change_session(
-            services.DiagnosticSessionControl.Session.extendedDiagnosticSession
-        )
         response = client.get_dtc_by_status_mask(status_mask.get_byte_as_int())
         if callback:
             callback(
@@ -704,9 +728,18 @@ def read_ecu_data(
             )
 
         detailedLogger.info("Opening extended diagnostic session...")
-        client.change_session(
-            services.DiagnosticSessionControl.Session.extendedDiagnosticSession
-        )
+        try:
+            client.change_session(
+                services.DiagnosticSessionControl.Session.extendedDiagnosticSession
+            )
+        except InvalidResponseException:
+            if callback:
+                callback(
+                    flasher_step="FAILED",
+                    flasher_status="Can't establish a connection with the car. Make sure you're connected to the car's OBD port",
+                    flasher_progress=100,
+                )
+            raise
 
         # Fix timeouts to work around setups which lie about their response speed
         client.session_timing["p2_server_max"] = 30

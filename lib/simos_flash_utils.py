@@ -1,17 +1,15 @@
-import logging
 import base64
+import logging
+from typing import Union
 
 from lib.workshop_code import WorkshopCode, crc8_hash
-
-from . import lzss_helper as lzss
 from . import checksum as simos_checksum
-from . import patch_cboot
 from . import constants as constants
+from . import flash_uds
+from . import lzss_helper as lzss
+from . import patch_cboot
 from .constants import BlockData, FlashInfo, PreparedBlockData
 from .modules import simosshared
-from . import flash_uds
-
-from typing import Union
 
 cliLogger = logging.getLogger("FlashUtils")
 

@@ -1,5 +1,6 @@
 from lib.crypto.crypto_interface import CryptoInterface
 
+
 # This is one of the silliest "encryption" methods I have ever seen.
 # The code for this amazing algorithm was discovered at 80017168 in 03F906070AK.
 # It could also have been found easily through some basic cryptanalysis.

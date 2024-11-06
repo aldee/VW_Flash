@@ -16,7 +16,6 @@ from .simosshared import (
     checksum_block_location,
 )
 
-
 # Simos 18.41 Flash Info
 
 block_names_frf_s1841 = {

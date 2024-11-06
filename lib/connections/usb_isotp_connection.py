@@ -1,11 +1,10 @@
-from udsoncan.connections import BaseConnection
-from udsoncan.exceptions import TimeoutException
-
-import serial
 import queue
+import sys
 import threading
 
-import sys
+import serial
+from udsoncan.connections import BaseConnection
+from udsoncan.exceptions import TimeoutException
 
 
 class USBISOTPConnection(BaseConnection):

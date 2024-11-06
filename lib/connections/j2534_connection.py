@@ -1,18 +1,17 @@
-from udsoncan.connections import BaseConnection
-from udsoncan.exceptions import TimeoutException
-
+import ctypes
 import queue
 import threading
 
+from udsoncan.connections import BaseConnection
+from udsoncan.exceptions import TimeoutException
+
+from .j2534 import Error_ID
+from .j2534 import Ioctl_Flags
+from .j2534 import Ioctl_ID
+from .j2534 import Ioctl_Parameters
 from .j2534 import J2534
 from .j2534 import Protocol_ID
-from .j2534 import Ioctl_ID
-from .j2534 import Ioctl_Flags
-from .j2534 import Ioctl_Parameters
 from .j2534 import SCONFIG
-from .j2534 import Error_ID
-
-import ctypes
 
 
 class J2534Connection(BaseConnection):
@@ -72,7 +71,7 @@ class J2534Connection(BaseConnection):
         self.logger.info(
             "J2534 FirmwareVersion: "
             + str(self.firmwareVersion.value)
-            + ", dllVersoin: "
+            + ", dllVersion: "
             + str(self.dllVersion.value)
             + ", apiVersion"
             + str(self.apiVersion.value)

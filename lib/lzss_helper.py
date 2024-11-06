@@ -1,5 +1,6 @@
-import os, sys
+import os
 import subprocess
+import sys
 
 if sys.platform == "win32":
     libdir = os.path.dirname(os.path.abspath(sys.argv[0]))

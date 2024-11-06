@@ -1,14 +1,15 @@
 import math
-
-from udsoncan.connections import IsoTPSocketConnection
-from .fake_connection import FakeConnection
-
 from typing import Union
 
+from udsoncan.connections import IsoTPSocketConnection
+
+from .fake_connection import FakeConnection
+
 try:
-    from .j2534_connection import J2534Connection
+    from .ori_j2534_connection import J2534Connection
 except Exception as e:
     print(e)
+    from .j2534_connection import J2534Connection
 
 from lib import constants
 

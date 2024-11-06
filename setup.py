@@ -1,10 +1,8 @@
 from distutils.core import setup
-import py2exe
-import lib
 
 data_files = [
     ("lib/lzss", ["lib/lzss/lzss.exe"]),
-    (".", ["logging.conf"]),
+    (".", ["logging.ini"]),
     (
         "data",
         ["data/box_codes.csv", "data/mqb_dsg_key.bin", "data/dtcs.csv", "data/frf.key"],

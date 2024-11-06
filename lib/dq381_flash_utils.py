@@ -1,16 +1,13 @@
 import logging
 import zlib
+from typing import Union
 
 from lib.workshop_code import WorkshopCode, crc8_hash
-
-from . import lzss_helper as lzss
-from . import dq381_checksum
-from .modules import dq381
 from . import constants as constants
-from .constants import BlockData, FlashInfo, PreparedBlockData
+from . import dq381_checksum
 from . import flash_uds
-
-from typing import Union
+from . import lzss_helper as lzss
+from .constants import BlockData, FlashInfo, PreparedBlockData
 
 cliLogger = logging.getLogger("FlashUtils")
 

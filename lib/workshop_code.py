@@ -5,9 +5,11 @@
 # This is a way to identify what was flashed last without ASW patches or ReadMemory access.
 # CC : CRC8 checksum of the Workshop Code.
 
-from .bcd import convert_from_bcd, convert_to_bcd
 from datetime import date
+
 import udsoncan
+
+from .bcd import convert_from_bcd, convert_to_bcd
 
 crc8_table = [
     0x00,

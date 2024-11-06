@@ -1,12 +1,13 @@
-import asn1
-from Cryptodome.PublicKey.RSA import construct
-from sys import argv
-import sys
 import binascii
 import struct
+import sys
+from sys import argv
+
+import asn1
+from Cryptodome.PublicKey.RSA import construct
+
 import lib.modules.simos18
 import lib.modules.simosshared
-
 
 flash_info = lib.modules.simos18.s18_flash_info
 

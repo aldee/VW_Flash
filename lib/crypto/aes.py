@@ -1,5 +1,6 @@
-from lib.crypto.crypto_interface import CryptoInterface
 import Crypto.Cipher.AES
+
+from lib.crypto.crypto_interface import CryptoInterface
 
 
 class AES(CryptoInterface):

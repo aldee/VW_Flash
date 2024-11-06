@@ -1,13 +1,12 @@
 import logging
-
-from . import lzss_helper as lzss
-from . import dsg_checksum as dsg_checksum
-from . import constants as constants
-from . import flash_uds
-from .modules import dq250mqb
-from .constants import BlockData, FlashInfo, PreparedBlockData
-
 from typing import Union
+
+from . import constants as constants
+from . import dsg_checksum as dsg_checksum
+from . import flash_uds
+from . import lzss_helper as lzss
+from .constants import BlockData, FlashInfo, PreparedBlockData
+from .modules import dq250mqb
 
 cliLogger = logging.getLogger("FlashUtils")
 

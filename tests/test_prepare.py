@@ -1,11 +1,12 @@
-from pathlib import Path
 import unittest
-from lib import simos_flash_utils
-from lib import dsg_flash_utils
-from lib import constants
-from lib import extract_flash
-from lib.modules import simos18, simos1810, dq250mqb
 import zlib
+from pathlib import Path
+
+from lib import constants
+from lib import dsg_flash_utils
+from lib import extract_flash
+from lib import simos_flash_utils
+from lib.modules import simos18, simos1810, dq250mqb
 
 
 class Simos18FlashUtilsTestCase(unittest.TestCase):

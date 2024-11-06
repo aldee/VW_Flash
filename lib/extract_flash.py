@@ -1,7 +1,8 @@
 import io
 import zipfile
-from frf import decryptfrf
+
 import extractodx
+from frf import decryptfrf
 from . import constants
 
 

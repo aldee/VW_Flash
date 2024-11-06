@@ -1,20 +1,16 @@
 import ctypes
+import logging
 from ctypes import (
     Structure,
     WINFUNCTYPE,
     POINTER,
-    cast,
     c_long,
     c_void_p,
     c_ulong,
     byref,
     pointer,
 )
-
-import pprint
 from enum import Enum
-
-import logging
 
 
 class PASSTHRU_MSG(Structure):
@@ -420,7 +416,6 @@ class J2534:
 
 
 class Error_ID(Enum):
-
     ERR_SUCCESS = 0x00
     STATUS_NOERROR = 0x00
     ERR_NOT_SUPPORTED = 0x01
@@ -452,7 +447,6 @@ class Error_ID(Enum):
 
 
 class Protocol_ID(Enum):
-
     J1850VPW = 1
     J1850PWM = 2
     ISO9141 = 3

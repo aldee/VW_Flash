@@ -1,6 +1,8 @@
-from lib.crypto.crypto_interface import CryptoInterface
 import pathlib
+
 from lib.constants import internal_path
+from lib.crypto.crypto_interface import CryptoInterface
+
 
 # This is a progressive substitution cypher
 # The code for this can be found at 0x800164AC and the key material at 0x8001053C in flash from DQ250_MQB_0D9300012L_4516

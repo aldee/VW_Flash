@@ -1,10 +1,9 @@
-import struct
 import logging
+import struct
 import zlib
 
-from .modules import dq381
-
 from . import constants
+from .modules import dq381
 
 logger = logging.getLogger("Checksum")
 

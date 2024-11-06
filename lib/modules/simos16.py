@@ -1,6 +1,6 @@
-from lib.constants import FlashInfo, internal_path, ecu_control_module_identifier
+from lib.constants import FlashInfo, ecu_control_module_identifier
 from lib.crypto import aes
-from .simos18 import base_addresses_s18, block_lengths_s18
+from .simos18 import block_lengths_s18
 from .simosshared import (
     block_identifiers_simos,
     block_checksums_simos,
@@ -10,7 +10,6 @@ from .simosshared import (
     block_name_to_int,
     checksum_block_location,
 )
-
 
 # Simos 16.11 Flash Info
 

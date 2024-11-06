@@ -1,28 +1,29 @@
-import asyncio
 import glob
-from pathlib import Path
-import wx
-import os.path as path
-import logging
 import json
-import threading
+import logging
+import os
+import os.path as path
 import sys
+import threading
+from datetime import datetime
+from logging import Formatter
+from pathlib import Path
+from zipfile import ZipFile
+
 import serial
 import serial.tools.list_ports
+import wx
+from udsoncan import InvalidResponseException
 
-from zipfile import ZipFile
-from datetime import datetime
-
-from lib import extract_flash
 from lib import binfile
-from lib import flash_uds
-from lib import simos_flash_utils
-from lib import dsg_flash_utils
-from lib import dq381_flash_utils
-from lib import haldex_flash_utils
 from lib import constants
+from lib import dq381_flash_utils
+from lib import dsg_flash_utils
+from lib import extract_flash
+from lib import flash_uds
+from lib import haldex_flash_utils
+from lib import simos_flash_utils
 from lib import simos_hsl
-
 from lib.modules import (
     simos8,
     simos10,
@@ -34,8 +35,7 @@ from lib.modules import (
     dq250mqb,
     dq381,
     simos16,
-    simosshared,
-    haldex4motion
+    haldex4motion,
 )
 
 DEFAULT_STMIN = 350000
@@ -54,7 +54,8 @@ try:
 except NameError:  # We are the main py2exe script, not a module
     currentPath = path.dirname(path.abspath(sys.argv[0]))
 
-logging.config.fileConfig(path.join(currentPath, "logging.conf"))
+logging.config.fileConfig(path.join(currentPath, "logging.ini"))
+loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
 
 
 def write_config(paths):
@@ -69,8 +70,10 @@ def module_selection_is_dq250(selection_index):
 def module_selection_is_dq381(selection_index):
     return selection_index == 3
 
+
 def module_selection_is_haldex(selected_index):
     return selected_index == 4
+
 
 def split_interface_name(interface_string: str):
     parts = interface_string.split("_", 1)
@@ -122,6 +125,16 @@ def poll_interfaces():
             (port.name + " : " + port.description, "USBISOTP_" + port.device)
         )
     return interfaces
+
+
+class TextCtrlHandler(logging.Handler):
+    def __init__(self, text_ctrl):
+        super().__init__()
+        self.text_ctrl = text_ctrl
+
+    def emit(self, record):
+        log_entry = self.format(record)
+        wx.CallAfter(self.text_ctrl.AppendText, log_entry + "\n")
 
 
 class UnlockDialog(wx.Dialog):
@@ -199,16 +212,18 @@ class FlashPanel(wx.Panel):
     def __init__(self, parent):
         super().__init__(parent)
 
+        self.hsl_logger = None
+
         try:
             with open("gui_config.json", "r") as config_file:
                 self.options = json.load(config_file)
         except:
             logger.critical("No config file present, creating one")
             self.options = {
-                "cal": "",
+                "cal": os.path.expanduser("~"),
                 "flashpack": "",
                 "bins": "",
-                "logger": path.join(currentPath, "logs"),
+                "logging_path": path.join(currentPath, "logs"),
                 "interface": "",
                 "singlecsv": False,
                 "logmode": "22",
@@ -223,6 +238,21 @@ class FlashPanel(wx.Panel):
             if len(self.interfaces) > 0:
                 self.options["interface"] = self.interfaces[0][1]
                 write_config(self.options)
+
+        self.feedback_text = wx.TextCtrl(
+            self, size=(-1, 300), style=wx.TE_READONLY | wx.TE_LEFT | wx.TE_MULTILINE
+        )
+
+        for a_logger in loggers:
+            if a_logger.name in logging.root.manager.loggerDict:
+                handler = TextCtrlHandler(self.feedback_text)
+                handler.setFormatter(
+                    Formatter(
+                        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                        datefmt="%Y-%m-%d %H:%M:%S",
+                    )
+                )
+                a_logger.addHandler(handler)
 
         main_sizer = wx.BoxSizer(wx.VERTICAL)
         folder_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -253,12 +283,6 @@ class FlashPanel(wx.Panel):
         self.action_choice.SetSelection(0)
         self.action_choice.Bind(wx.EVT_CHOICE, self.update_bin_listing)
 
-        # Create a button for choosing the folder
-        self.folder_button = wx.Button(self, label="Open Folder...")
-        self.folder_button.Bind(wx.EVT_BUTTON, self.GetParent().on_open_folder)
-
-        folder_sizer.Add(self.folder_button, 0, wx.ALL | wx.LEFT, 5)
-
         self.progress_bar = wx.Gauge(self, range=100, style=wx.GA_HORIZONTAL)
 
         self.row_obj_dict = {}
@@ -278,10 +302,6 @@ class FlashPanel(wx.Panel):
             wx.EVT_LIST_ITEM_DESELECTED, lambda evt: self.set_item_style(evt, False)
         )
 
-        self.feedback_text = wx.TextCtrl(
-            self, size=(-1, 300), style=wx.TE_READONLY | wx.TE_LEFT | wx.TE_MULTILINE
-        )
-
         flash_button = wx.Button(self, label="Flash")
         flash_button.Bind(wx.EVT_BUTTON, self.on_flash)
 
@@ -291,16 +311,24 @@ class FlashPanel(wx.Panel):
         get_info_button = wx.Button(self, label="Get Ecu Info")
         get_info_button.Bind(wx.EVT_BUTTON, self.on_get_info)
 
+        self.start_logger_button = wx.Button(self, label="Start Logger")
+        self.start_logger_button.Bind(wx.EVT_BUTTON, self.GetParent().on_start_logger)
+
+        self.stop_logger_button = wx.Button(self, label="Stop Logger")
+        self.stop_logger_button.Bind(wx.EVT_BUTTON, self.GetParent().on_stop_logger)
+
         actions_sizer.Add(self.module_choice, 0, wx.LEFT, 5)
         actions_sizer.Add(get_info_button, 0, wx.LEFT | wx.RIGHT, 5)
         actions_sizer.Add(dtc_button, 0, wx.RIGHT, 5)
+        actions_sizer.Add(self.start_logger_button, 0, wx.RIGHT, 5)
+        actions_sizer.Add(self.stop_logger_button, 0, wx.RIGHT, 5)
 
         selections_sizer.Add(self.action_choice, 0, wx.EXPAND | wx.ALL, 5)
         selections_sizer.Add(flash_button, 0, wx.EXPAND | wx.ALL, 5)
 
         main_sizer.Add(self.feedback_text, 0, wx.ALL | wx.EXPAND, 5)
         main_sizer.Add(actions_sizer, 0, wx.TOP, 5)
-        main_sizer.Add(folder_sizer, 0, wx.ALIGN_RIGHT, 5)
+        main_sizer.Add(folder_sizer, 0, wx.ALIGN_LEFT, 5)
         main_sizer.Add(self.list_ctrl, 0, wx.ALL | wx.EXPAND, 5)
         main_sizer.Add(self.progress_bar, 0, wx.EXPAND, 5)
         main_sizer.Add(selections_sizer)
@@ -308,8 +336,12 @@ class FlashPanel(wx.Panel):
         self.SetSizer(main_sizer)
 
         if self.options["cal"] != "":
-            self.current_folder_path = self.options["cal"]
+            self.current_flashfile_folder_path = self.options["cal"]
             self.update_bin_listing()
+
+    def log_to_window(self, text):
+        """Append a string to the feedback text control with added timestamp"""
+        logger.info(text)
 
     def set_item_style(self, event, selected):
         self.list_ctrl.SetItemFont(
@@ -323,47 +355,60 @@ class FlashPanel(wx.Panel):
             simos1810.s1810_flash_info,
             dq250mqb.dsg_flash_info,
             dq381.dsg_flash_info,
-            haldex4motion.haldex_flash_info
+            haldex4motion.haldex_flash_info,
         ][module_number]
 
     def on_get_info(self, event):
         (interface, interface_path) = split_interface_name(self.options["interface"])
-        ecu_info = flash_uds.read_ecu_data(
-            self.flash_info,
-            interface=interface,
-            callback=self.update_callback,
-            interface_path=interface_path,
-        )
+        try:
+            ecu_info = flash_uds.read_ecu_data(
+                self.flash_info,
+                interface=interface,
+                callback=self.update_callback,
+                interface_path=interface_path,
+            )
 
-        [
-            self.feedback_text.AppendText(did + " : " + ecu_info[did] + "\n")
-            for did in ecu_info
-        ]
+            [self.log_to_window(did + " : " + ecu_info[did] + "\n") for did in ecu_info]
+        except InvalidResponseException as e:
+            wx.LogError(
+                "Failed to establish a connection with the car. Make sure your PC is connected to the car's OBD port"
+            )
+        except Exception as e:
+            wx.LogError(f"An unexpected error occurred: {str(e)}")
 
     def on_read_dtcs(self, event):
         (interface, interface_path) = split_interface_name(self.options["interface"])
-        dtcs = flash_uds.read_dtcs(
-            self.flash_info,
-            interface=interface,
-            callback=self.update_callback,
-            interface_path=interface_path,
-        )
-        [
-            self.feedback_text.AppendText(str(dtc) + " : " + dtcs[dtc] + "\n")
-            for dtc in dtcs
-        ]
+        try:
+            dtcs = flash_uds.read_dtcs(
+                self.flash_info,
+                interface=interface,
+                callback=self.update_callback,
+                interface_path=interface_path,
+            )
+            [self.log_to_window(str(dtc) + " : " + dtcs[dtc] + "\n") for dtc in dtcs]
+        except InvalidResponseException as e:
+            wx.LogError(
+                "Failed to establish a connection with the car. Make sure your PC is connected to the car's OBD port, either via USB or Bluetooth"
+            )
+        except Exception as e:
+            wx.LogError(f"An unexpected error occurred: {str(e)}")
 
     def flash_unlock(self, selected_file):
-        if module_selection_is_dq250(
-            self.module_choice.GetSelection()
-        ) or module_selection_is_dq381(self.module_choice.GetSelection()) or module_selection_is_haldex(self.module_choice.GetSelection()):
-            self.feedback_text.AppendText("SKIPPED: Unlocking is unnecessary for Haldex/DSG\n")
+        if (
+            module_selection_is_dq250(self.module_choice.GetSelection())
+            or module_selection_is_dq381(self.module_choice.GetSelection())
+            or module_selection_is_haldex(self.module_choice.GetSelection())
+        ):
+            self.log_to_window("SKIPPED: Unlocking is unnecessary for Haldex/DSG\n")
             return
 
         input_bytes = Path(selected_file).read_bytes()
         if str.endswith(selected_file, ".frf"):
-            self.feedback_text.AppendText("Extracting FRF for unlock...\n")
-            (flash_data, allowed_boxcodes,) = extract_flash.extract_flash_from_frf(
+            self.log_to_window("Extracting FRF for unlock...\n")
+            (
+                flash_data,
+                allowed_boxcodes,
+            ) = extract_flash.extract_flash_from_frf(
                 input_bytes,
                 self.flash_info,
                 is_dsg=module_selection_is_dq250(self.module_choice.GetSelection()),
@@ -387,7 +432,7 @@ class FlashPanel(wx.Panel):
                 file_box_code.strip()
                 != self.flash_info.patch_info.patch_box_code.split("_")[0].strip()
             ):
-                self.feedback_text.AppendText(
+                self.log_to_window(
                     f"Boxcode mismatch for unlocking. Got box code {file_box_code} but expected {self.flash_info.patch_info.patch_box_code}. Please don't try to be clever. Supply the correct file and the process will work."
                 )
                 return
@@ -404,15 +449,18 @@ class FlashPanel(wx.Panel):
             self.input_blocks = input_blocks_with_patch
             self.flash_bin(get_info=False)
         else:
-            self.feedback_text.AppendText(
+            self.log_to_window(
                 "File did not appear to be a valid FRF. Unlocking is possible only with a specific FRF file for your ECU family.\n"
             )
 
     def flash_bin_file(self, selected_file, patch_cboot=False):
         input_bytes = Path(self.row_obj_dict[selected_file]).read_bytes()
         if str.endswith(self.row_obj_dict[selected_file], ".frf"):
-            self.feedback_text.AppendText("Extracting FRF...\n")
-            (flash_data, allowed_boxcodes,) = extract_flash.extract_flash_from_frf(
+            self.log_to_window("Extracting FRF...\n")
+            (
+                flash_data,
+                allowed_boxcodes,
+            ) = extract_flash.extract_flash_from_frf(
                 input_bytes,
                 self.flash_info,
                 is_dsg=module_selection_is_dq250(self.module_choice.GetSelection()),
@@ -426,21 +474,19 @@ class FlashPanel(wx.Panel):
             self.flash_bin(get_info=False, should_patch_cboot=patch_cboot)
         elif len(input_bytes) == self.flash_info.binfile_size:
             self.input_blocks = binfile.blocks_from_bin(
-                self.row_obj_dict[selected_file], self.flash_info, module_selection_is_haldex(self.module_choice.GetSelection())
+                self.row_obj_dict[selected_file],
+                self.flash_info,
+                module_selection_is_haldex(self.module_choice.GetSelection()),
             )
             self.flash_bin(get_info=False, should_patch_cboot=patch_cboot)
         else:
-            self.feedback_text.AppendText(
-                "File did not appear to be a valid BIN or FRF\n"
-            )
+            self.log_to_window("File did not appear to be a valid BIN or FRF\n")
 
     def flash_flashpack(self, selected_file: str):
         # We're expecting a "FlashPack" ZIP
         with ZipFile(self.row_obj_dict[selected_file], "r") as zip_archive:
             if "file_list.json" not in zip_archive.namelist():
-                self.feedback_text.AppendText(
-                    "SKIPPING: No file listing found in archive\n"
-                )
+                self.log_to_window("SKIPPING: No file listing found in archive\n")
 
             else:
                 with zip_archive.open("file_list.json") as file_list_json:
@@ -460,11 +506,9 @@ class FlashPanel(wx.Panel):
 
         input_bytes = Path(self.row_obj_dict[selected_file]).read_bytes()
         if len(input_bytes) == self.flash_info.binfile_size:
-            self.feedback_text.AppendText(
-                "Extracting Calibration from full binary...\n"
-            )
+            self.log_to_window("Extracting Calibration from full binary...\n")
             if module_selection_is_dq250(self.module_choice.GetSelection()):
-                self.feedback_text.AppendText("Extracting Driver from full binary...\n")
+                self.log_to_window("Extracting Driver from full binary...\n")
             input_blocks = binfile.blocks_from_bin(
                 self.row_obj_dict[selected_file], self.flash_info
             )
@@ -482,9 +526,7 @@ class FlashPanel(wx.Panel):
             if module_selection_is_dq250(self.module_choice.GetSelection()):
                 # Populate DSG Driver block from a fixed file name if it's a CAL only bin
                 dsg_driver_path = path.join(self.options["cal"], "FD_2.DRIVER.bin")
-                self.feedback_text.AppendText(
-                    "Loading DSG Driver from: " + dsg_driver_path + "\n"
-                )
+                self.log_to_window("Loading DSG Driver from: " + dsg_driver_path + "\n")
                 self.input_blocks["FD_2.DRIVER.bin"] = constants.BlockData(
                     self.flash_info.block_name_to_number["DRIVER"],
                     Path(dsg_driver_path).read_bytes(),
@@ -499,7 +541,7 @@ class FlashPanel(wx.Panel):
     def on_flash(self, event):
         selected_file = self.list_ctrl.GetFirstSelected()
         if selected_file == -1:
-            self.feedback_text.AppendText("SKIPPING: Select a file to flash!\n")
+            self.log_to_window("SKIPPING: Select a file to flash!\n")
             return
 
         file_name = str(self.row_obj_dict[selected_file])
@@ -549,22 +591,22 @@ class FlashPanel(wx.Panel):
 
         if self.action_choice.GetSelection() == 0:
             # Calibration Flash
-            bins = glob.glob(self.current_folder_path + "/*.bin")
-            self.options["cal"] = self.current_folder_path
+            bins = glob.glob(self.current_flashfile_folder_path + "/*.bin")
+            self.options["cal"] = self.current_flashfile_folder_path
         elif self.action_choice.GetSelection() == 1:
             # Flashpack
-            bins = glob.glob(self.current_folder_path + "/*.zip")
-            self.options["flashpacks"] = self.current_folder_path
+            bins = glob.glob(self.current_flashfile_folder_path + "/*.zip")
+            self.options["flashpacks"] = self.current_flashfile_folder_path
         elif self.action_choice.GetSelection() == 2:
             # Full BIN/FRF Unlocked
-            bins = glob.glob(self.current_folder_path + "/*.bin")
-            bins.extend(glob.glob(self.current_folder_path + "/*.frf"))
-            self.options["bins"] = self.current_folder_path
-        elif self.action_choice.GetSelection() == 3:
+            bins = glob.glob(self.current_flashfile_folder_path + "/*.bin")
+            bins.extend(glob.glob(self.current_flashfile_folder_path + "/*.frf"))
+            self.options["bins"] = self.current_flashfile_folder_path
+        else:
             # Unmodified flash
-            bins = glob.glob(self.current_folder_path + "/*.bin")
-            bins.extend(glob.glob(self.current_folder_path + "/*.frf"))
-            self.options["bins"] = self.current_folder_path
+            bins = glob.glob(self.current_flashfile_folder_path + "/*.bin")
+            bins.extend(glob.glob(self.current_flashfile_folder_path + "/*.frf"))
+            self.options["bins"] = self.current_flashfile_folder_path
 
         write_config(self.options)
         bins.sort(key=path.getmtime, reverse=True)
@@ -590,9 +632,7 @@ class FlashPanel(wx.Panel):
     def threaded_callback(self, step, status, progress):
         self.GetParent().statusbar.SetStatusText(step)
         self.progress_bar.SetValue(round(float(progress)))
-        self.feedback_text.AppendText(
-            step + " - " + status + " - " + str(progress) + "\n"
-        )
+        self.log_to_window(step + " - " + status + " - " + str(progress))
 
     def update_callback(self, **kwargs):
         if "flasher_step" in kwargs:
@@ -616,30 +656,37 @@ class FlashPanel(wx.Panel):
         else:
             flash_utils = simos_flash_utils
 
-        self.feedback_text.AppendText(
+        self.log_to_window(
             "Starting to flash the following software components : \n"
             + binfile.input_block_info(self.input_blocks, self.flash_info)
             + "\n"
         )
 
         if get_info:
-            ecu_info = flash_uds.read_ecu_data(
-                self.flash_info,
-                interface=interface,
-                callback=self.update_callback,
-                interface_path=interface_path,
-            )
+            try:
+                ecu_info = flash_uds.read_ecu_data(
+                    self.flash_info,
+                    interface=interface,
+                    callback=self.update_callback,
+                    interface_path=interface_path,
+                )
 
-            [
-                self.feedback_text.AppendText(did + " : " + ecu_info[did] + "\n")
-                for did in ecu_info
-            ]
+                [
+                    self.log_to_window(did + " : " + ecu_info[did] + "\n")
+                    for did in ecu_info
+                ]
+            except InvalidResponseException as e:
+                wx.LogError(
+                    "Failed to establish a connection with the car. Make sure your PC is connected to the car's OBD port"
+                )
+            except Exception as e:
+                wx.LogError(f"An unexpected error occurred: {str(e)}")
 
         else:
             ecu_info = None
 
         for filename in self.input_blocks:
-            fileBoxCode = str(
+            file_box_code = str(
                 self.input_blocks[filename]
                 .block_bytes[
                     self.flash_info.box_code_location[
@@ -661,13 +708,13 @@ class FlashPanel(wx.Panel):
                     or module_selection_is_haldex(self.module_choice.GetSelection())
                 )
                 is not True
-                and ecu_info["VW Spare Part Number"].strip() != fileBoxCode.strip()
+                and ecu_info["VW Spare Part Number"].strip() != file_box_code.strip()
             ):
-                self.feedback_text.AppendText(
+                self.log_to_window(
                     "Attempting to flash a file that doesn't match box codes, exiting!: "
                     + ecu_info["VW Spare Part Number"]
                     + " != "
-                    + fileBoxCode
+                    + file_box_code
                     + "\n"
                 )
                 return
@@ -697,7 +744,7 @@ class VW_Flash_Frame(wx.Frame):
         self.create_menu()
         self.statusbar = self.CreateStatusBar(1)
         self.statusbar.SetStatusText("Choose a bin file directory")
-        self.hsl_logger = None
+        self.hsl_logger = self.panel.hsl_logger = None
         self.selected_unlock = None
         self.Show()
 
@@ -767,20 +814,8 @@ class VW_Flash_Frame(wx.Frame):
             handler=self.select_logger_path,
             source=logger_path_menu_item,
         )
-        logger_menu_item = logger_menu.Append(
-            wx.ID_ANY, "Start Logger", "Start Simos High Speed Logger"
-        )
-        self.Bind(
-            event=wx.EVT_MENU, handler=self.on_start_logger, source=logger_menu_item
-        )
-        logger_stop_menu_item = logger_menu.Append(
-            wx.ID_ANY, "Stop Logger", "Stop Simos High Speed Logger"
-        )
-        self.Bind(
-            event=wx.EVT_MENU, handler=self.on_stop_logger, source=logger_stop_menu_item
-        )
 
-        logging_modes = ["22", "3E", "HSL"]
+        logging_modes = ["22", "22-MED", "3E", "HSL"]
         logging_modes_menu = wx.Menu()
         for mode in logging_modes:
             radio_item = logging_modes_menu.AppendRadioItem(
@@ -802,10 +837,10 @@ class VW_Flash_Frame(wx.Frame):
         self.SetMenuBar(menu_bar)
 
     def on_open_folder(self, event):
-        title = "Choose a directory:"
-        dlg = wx.DirDialog(self, title, style=wx.DD_DEFAULT_STYLE)
+        title = "Choose a directory of flash files:"
+        dlg = wx.DirDialog(self, title, style=wx.DD_DEFAULT_STYLE, defaultPath=self.panel.current_flashfile_folder_path)
         if dlg.ShowModal() == wx.ID_OK:
-            self.panel.current_folder_path = dlg.GetPath()
+            self.panel.current_flashfile_folder_path = dlg.GetPath()
             self.panel.update_bin_listing()
         dlg.Destroy()
 
@@ -816,9 +851,7 @@ class VW_Flash_Frame(wx.Frame):
     def on_select_unlock(self, event):
         module = self.panel.module_choice.GetSelection()
         if module not in [0, 1]:
-            self.panel.feedback_text.AppendText(
-                "This module does not require unlocking!\n"
-            )
+            self.panel.log_to_window("This module does not require unlocking!\n")
             return
 
         dlg = UnlockDialog(
@@ -827,9 +860,7 @@ class VW_Flash_Frame(wx.Frame):
         res = dlg.ShowModal()
         if res > 0:
             if self.selected_unlock == "":
-                self.panel.feedback_text.AppendText(
-                    "No FRF selected, aborting unlock!\n"
-                )
+                self.panel.log_to_window("No FRF selected, aborting unlock!\n")
                 return
             self.panel.flash_unlock(self.selected_unlock)
         dlg.Destroy()
@@ -846,9 +877,9 @@ class VW_Flash_Frame(wx.Frame):
 
     def select_logger_path(self, event):
         title = "Choose a directory for logging:"
-        dlg = wx.DirDialog(self, title, style=wx.DD_DEFAULT_STYLE)
+        dlg = wx.DirDialog(self, title, style=wx.DD_DEFAULT_STYLE, defaultPath=self.panel.options["logging_path"])
         if dlg.ShowModal() == wx.ID_OK:
-            self.panel.options["logger"] = dlg.GetPath()
+            self.panel.options["logging_path"] = dlg.GetPath()
             write_config(self.panel.options)
         dlg.Destroy()
 
@@ -856,7 +887,7 @@ class VW_Flash_Frame(wx.Frame):
         if self.hsl_logger is not None:
             return
 
-        if self.panel.options["logger"] == "":
+        if self.panel.options["logging_path"] == "":
             return
 
         (interface, interface_path) = split_interface_name(
@@ -867,7 +898,7 @@ class VW_Flash_Frame(wx.Frame):
             interactive=False,
             mode=self.panel.options["logmode"],
             level=self.panel.options["activitylevel"],
-            path=self.panel.options["logger"] + "/",
+            path=self.panel.options["logging_path"] + "/",
             callbackFunction=self.panel.update_callback,
             interface=interface,
             singleCSV=self.panel.options["singlecsv"],
@@ -886,7 +917,6 @@ class VW_Flash_Frame(wx.Frame):
         if self.hsl_logger is not None:
             self.hsl_logger.stop()
             self.hsl_logger = None
-
 
     def on_select_interface(self, event):
         progress_dialog = wx.ProgressDialog(
@@ -994,6 +1024,7 @@ class VW_Flash_Frame(wx.Frame):
                 frf_thread.start()
                 progress_dialog.Pulse()
                 progress_dialog.Show()
+
 
 if __name__ == "__main__":
     app = wx.App(False)

@@ -1,21 +1,18 @@
 import logging
 import zlib
+from typing import Union
 
 from . import constants as constants
 from . import flash_uds
-from .modules import haldex4motion
-from .constants import BlockData, FlashInfo, PreparedBlockData
 from . import haldex_checksum
-
-from typing import Union
+from .constants import BlockData, FlashInfo, PreparedBlockData
+from .modules import haldex4motion
 
 cliLogger = logging.getLogger("FlashUtils")
 
 
 def prepare_blocks(flash_info: constants.FlashInfo, input_blocks: dict, callback=None):
-    blocks = checksum_and_patch_blocks(
-        flash_info, input_blocks, callback
-    )
+    blocks = checksum_and_patch_blocks(flash_info, input_blocks, callback)
     output_blocks = {}
     for filename in blocks:
         block: BlockData = blocks[filename]
@@ -123,6 +120,7 @@ def checksum_and_patch_blocks(
         output_blocks[filename] = BlockData(blocknum, corrected_file, blockname)
     return output_blocks
 
+
 def checksum(flash_info, input_blocks):
     for filename in input_blocks:
         input_block = input_blocks[filename]
@@ -181,7 +179,7 @@ def flash_bin(
     prepared_blocks = prepare_blocks(flash_info, input_blocks, callback)
 
     # Manually override flash_info
-    flash_info.block_lengths[2] = len(prepared_blocks['FD_1DATA'].block_encrypted_bytes)
+    flash_info.block_lengths[2] = len(prepared_blocks["FD_1DATA"].block_encrypted_bytes)
 
     flash_uds.flash_blocks(
         flash_info=flash_info,

@@ -1,15 +1,14 @@
 import argparse
 import binascii
-from lib import legacysimos
-from pathlib import Path
 import os
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 from lib import constants
+from lib import legacysimos
 from lib.modules import (
     simos8,
     simos10,
-    simos12,
     simos18,
     simos1810,
     simos184,
