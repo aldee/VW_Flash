@@ -1,6 +1,7 @@
 import glob
 import json
 import logging
+import logging.config
 import os
 import os.path as path
 import sys
@@ -79,26 +80,26 @@ def split_interface_name(interface_string: str):
     parts = interface_string.split("_", 1)
     interface = parts[0]
     interface_name = parts[1] if len(parts) > 1 else None
-    return (interface, interface_name)
+    return interface, interface_name
 
 
 def get_dlls_from_registry():
     # Interfaces is a list of tuples (name: str, interface specifier: str)
     interfaces = []
     try:
-        BaseKey = winreg.OpenKeyEx(
+        base_key = winreg.OpenKeyEx(
             winreg.HKEY_LOCAL_MACHINE, r"Software\\PassThruSupport.04.04\\"
         )
     except:
         logger.error("No J2534 DLLs found in HKLM PassThruSupport. Continuing anyway.")
         return interfaces
 
-    for i in range(winreg.QueryInfoKey(BaseKey)[0]):
+    for i in range(winreg.QueryInfoKey(base_key)[0]):
         try:
-            DeviceKey = winreg.OpenKeyEx(BaseKey, winreg.EnumKey(BaseKey, i))
-            Name = winreg.QueryValueEx(DeviceKey, "Name")[0]
-            FunctionLibrary = winreg.QueryValueEx(DeviceKey, "FunctionLibrary")[0]
-            interfaces.append((Name, "J2534_" + FunctionLibrary))
+            device_key = winreg.OpenKeyEx(base_key, winreg.EnumKey(base_key, i))
+            name = winreg.QueryValueEx(device_key, "Name")[0]
+            function_library = winreg.QueryValueEx(device_key, "FunctionLibrary")[0]
+            interfaces.append((name, "J2534_" + function_library))
         except:
             logger.error(
                 "Found a J2534 interface, but could not enumerate the registry entry. Continuing."
@@ -172,15 +173,15 @@ class UnlockDialog(wx.Dialog):
 
 
 class StminDialog(wx.Dialog):
-    def __init__(self, parent, title, currentValue):
+    def __init__(self, parent, title, current_value):
         super(StminDialog, self).__init__(parent, title=title, size=(300, 120))
         panel = wx.Panel(self)
         sizer = wx.BoxSizer(wx.VERTICAL)
         button_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.slider = wx.Slider(
-            panel, value=currentValue // 1000, minValue=0, maxValue=1000
+            panel, value=current_value // 1000, minValue=0, maxValue=1000
         )
-        self.label = wx.StaticText(panel, label=str(currentValue // 1000))
+        self.label = wx.StaticText(panel, label=str(current_value // 1000))
         self.ok_btn = wx.Button(panel, wx.ID_OK, label="Save")
         self.cancel_btn = wx.Button(panel, wx.ID_CANCEL, label="Cancel")
         button_sizer.Add(self.ok_btn)
@@ -204,6 +205,11 @@ class StminDialog(wx.Dialog):
                 self.EndModal(-1)
         else:
             self.Close()
+
+
+def log_to_window(text):
+    """Append a string to the feedback text control with added timestamp"""
+    logger.info(text)
 
 
 class FlashPanel(wx.Panel):
@@ -253,6 +259,9 @@ class FlashPanel(wx.Panel):
                     )
                 )
                 a_logger.addHandler(handler)
+
+        logger.info(f"Currently selected interface is: {self.options["interface"]}")
+        logger.info(f"Currently selected logging path is: {self.options["logging_path"]}")
 
         main_sizer = wx.BoxSizer(wx.VERTICAL)
         folder_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -339,10 +348,6 @@ class FlashPanel(wx.Panel):
             self.current_flashfile_folder_path = self.options["cal"]
             self.update_bin_listing()
 
-    def log_to_window(self, text):
-        """Append a string to the feedback text control with added timestamp"""
-        logger.info(text)
-
     def set_item_style(self, event, selected):
         self.list_ctrl.SetItemFont(
             event.GetIndex(), wx.Font(wx.FontInfo().Bold(selected))
@@ -368,8 +373,8 @@ class FlashPanel(wx.Panel):
                 interface_path=interface_path,
             )
 
-            [self.log_to_window(did + " : " + ecu_info[did] + "\n") for did in ecu_info]
-        except InvalidResponseException as e:
+            [log_to_window(did + " : " + ecu_info[did] + "\n") for did in ecu_info]
+        except InvalidResponseException:
             wx.LogError(
                 "Failed to establish a connection with the car. Make sure your PC is connected to the car's OBD port"
             )
@@ -385,8 +390,8 @@ class FlashPanel(wx.Panel):
                 callback=self.update_callback,
                 interface_path=interface_path,
             )
-            [self.log_to_window(str(dtc) + " : " + dtcs[dtc] + "\n") for dtc in dtcs]
-        except InvalidResponseException as e:
+            [log_to_window(str(dtc) + " : " + dtcs[dtc] + "\n") for dtc in dtcs]
+        except InvalidResponseException:
             wx.LogError(
                 "Failed to establish a connection with the car. Make sure your PC is connected to the car's OBD port, either via USB or Bluetooth"
             )
@@ -399,12 +404,12 @@ class FlashPanel(wx.Panel):
             or module_selection_is_dq381(self.module_choice.GetSelection())
             or module_selection_is_haldex(self.module_choice.GetSelection())
         ):
-            self.log_to_window("SKIPPED: Unlocking is unnecessary for Haldex/DSG\n")
+            log_to_window("SKIPPED: Unlocking is unnecessary for Haldex/DSG\n")
             return
 
         input_bytes = Path(selected_file).read_bytes()
         if str.endswith(selected_file, ".frf"):
-            self.log_to_window("Extracting FRF for unlock...\n")
+            log_to_window("Extracting FRF for unlock...\n")
             (
                 flash_data,
                 allowed_boxcodes,
@@ -432,7 +437,7 @@ class FlashPanel(wx.Panel):
                 file_box_code.strip()
                 != self.flash_info.patch_info.patch_box_code.split("_")[0].strip()
             ):
-                self.log_to_window(
+                log_to_window(
                     f"Boxcode mismatch for unlocking. Got box code {file_box_code} but expected {self.flash_info.patch_info.patch_box_code}. Please don't try to be clever. Supply the correct file and the process will work."
                 )
                 return
@@ -442,21 +447,21 @@ class FlashPanel(wx.Panel):
                 Path(self.flash_info.patch_info.patch_filename).read_bytes(),
             )
             key_order = list(
-                map(lambda i: self.flash_info.block_names_frf[i], [1, 2, 3, 4, 5])
+                map(lambda index: self.flash_info.block_names_frf[index], [1, 2, 3, 4, 5])
             )
             key_order.insert(4, "UNLOCK_PATCH")
             input_blocks_with_patch = {k: self.input_blocks[k] for k in key_order}
             self.input_blocks = input_blocks_with_patch
             self.flash_bin(get_info=False)
         else:
-            self.log_to_window(
+            log_to_window(
                 "File did not appear to be a valid FRF. Unlocking is possible only with a specific FRF file for your ECU family.\n"
             )
 
     def flash_bin_file(self, selected_file, patch_cboot=False):
         input_bytes = Path(self.row_obj_dict[selected_file]).read_bytes()
         if str.endswith(self.row_obj_dict[selected_file], ".frf"):
-            self.log_to_window("Extracting FRF...\n")
+            log_to_window("Extracting FRF...\n")
             (
                 flash_data,
                 allowed_boxcodes,
@@ -480,13 +485,13 @@ class FlashPanel(wx.Panel):
             )
             self.flash_bin(get_info=False, should_patch_cboot=patch_cboot)
         else:
-            self.log_to_window("File did not appear to be a valid BIN or FRF\n")
+            log_to_window("File did not appear to be a valid BIN or FRF\n")
 
     def flash_flashpack(self, selected_file: str):
         # We're expecting a "FlashPack" ZIP
         with ZipFile(self.row_obj_dict[selected_file], "r") as zip_archive:
             if "file_list.json" not in zip_archive.namelist():
-                self.log_to_window("SKIPPING: No file listing found in archive\n")
+                log_to_window("SKIPPING: No file listing found in archive\n")
 
             else:
                 with zip_archive.open("file_list.json") as file_list_json:
@@ -506,9 +511,9 @@ class FlashPanel(wx.Panel):
 
         input_bytes = Path(self.row_obj_dict[selected_file]).read_bytes()
         if len(input_bytes) == self.flash_info.binfile_size:
-            self.log_to_window("Extracting Calibration from full binary...\n")
+            log_to_window("Extracting Calibration from full binary...\n")
             if module_selection_is_dq250(self.module_choice.GetSelection()):
-                self.log_to_window("Extracting Driver from full binary...\n")
+                log_to_window("Extracting Driver from full binary...\n")
             input_blocks = binfile.blocks_from_bin(
                 self.row_obj_dict[selected_file], self.flash_info
             )
@@ -526,7 +531,7 @@ class FlashPanel(wx.Panel):
             if module_selection_is_dq250(self.module_choice.GetSelection()):
                 # Populate DSG Driver block from a fixed file name if it's a CAL only bin
                 dsg_driver_path = path.join(self.options["cal"], "FD_2.DRIVER.bin")
-                self.log_to_window("Loading DSG Driver from: " + dsg_driver_path + "\n")
+                log_to_window("Loading DSG Driver from: " + dsg_driver_path + "\n")
                 self.input_blocks["FD_2.DRIVER.bin"] = constants.BlockData(
                     self.flash_info.block_name_to_number["DRIVER"],
                     Path(dsg_driver_path).read_bytes(),
@@ -541,7 +546,7 @@ class FlashPanel(wx.Panel):
     def on_flash(self, event):
         selected_file = self.list_ctrl.GetFirstSelected()
         if selected_file == -1:
-            self.log_to_window("SKIPPING: Select a file to flash!\n")
+            log_to_window("SKIPPING: Select a file to flash!\n")
             return
 
         file_name = str(self.row_obj_dict[selected_file])
@@ -632,7 +637,7 @@ class FlashPanel(wx.Panel):
     def threaded_callback(self, step, status, progress):
         self.GetParent().statusbar.SetStatusText(step)
         self.progress_bar.SetValue(round(float(progress)))
-        self.log_to_window(step + " - " + status + " - " + str(progress))
+        log_to_window(step + " - " + status + " - " + str(progress))
 
     def update_callback(self, **kwargs):
         if "flasher_step" in kwargs:
@@ -656,7 +661,7 @@ class FlashPanel(wx.Panel):
         else:
             flash_utils = simos_flash_utils
 
-        self.log_to_window(
+        log_to_window(
             "Starting to flash the following software components : \n"
             + binfile.input_block_info(self.input_blocks, self.flash_info)
             + "\n"
@@ -672,15 +677,17 @@ class FlashPanel(wx.Panel):
                 )
 
                 [
-                    self.log_to_window(did + " : " + ecu_info[did] + "\n")
+                    log_to_window(did + " : " + ecu_info[did] + "\n")
                     for did in ecu_info
                 ]
-            except InvalidResponseException as e:
+            except InvalidResponseException:
                 wx.LogError(
                     "Failed to establish a connection with the car. Make sure your PC is connected to the car's OBD port"
                 )
+                ecu_info = None
             except Exception as e:
                 wx.LogError(f"An unexpected error occurred: {str(e)}")
+                ecu_info = None
 
         else:
             ecu_info = None
@@ -710,7 +717,7 @@ class FlashPanel(wx.Panel):
                 is not True
                 and ecu_info["VW Spare Part Number"].strip() != file_box_code.strip()
             ):
-                self.log_to_window(
+                log_to_window(
                     "Attempting to flash a file that doesn't match box codes, exiting!: "
                     + ecu_info["VW Spare Part Number"]
                     + " != "
@@ -737,7 +744,56 @@ class FlashPanel(wx.Panel):
         flasher_thread.start()
 
 
-class VW_Flash_Frame(wx.Frame):
+def try_extract_frf(frf_data: bytes):
+    flash_infos = [
+        simos18.s18_flash_info,
+        simos1810.s1810_flash_info,
+        dq250mqb.dsg_flash_info,
+        dq381.dsg_flash_info,
+        haldex4motion.haldex_flash_info,
+        simos184.s1841_flash_info,
+        simos16.s16_flash_info,
+        simos12.s12_flash_info,
+        simos122.s122_flash_info,
+        simos10.s10_flash_info,
+        simos8.s8_flash_info,
+    ]
+    for flash_info in flash_infos:
+        try:
+            (flash_data, allowed_boxcodes) = extract_flash.extract_flash_from_frf(
+                frf_data,
+                flash_info,
+                is_dsg=(flash_info is dq250mqb.dsg_flash_info),
+            )
+            output_blocks = {}
+            for i in flash_info.block_names_frf.keys():
+                filename = flash_info.block_names_frf[i]
+                output_blocks[filename] = constants.BlockData(
+                    i, flash_data[filename], flash_info.number_to_block_name[i]
+                )
+            return [output_blocks, flash_info]
+        except:
+            pass
+
+
+def extract_frf_task(frf_path: str, output_path: str, callback):
+    frf_name = str.removesuffix(frf_path, ".frf")
+    [output_blocks, flash_info] = try_extract_frf(Path(frf_path).read_bytes())
+    outfile_data = binfile.bin_from_blocks(output_blocks, flash_info)
+    callback(50)
+    Path(output_path, Path(frf_name).name + ".bin").write_bytes(outfile_data)
+
+    for filename in output_blocks:
+        output_block: constants.BlockData = output_blocks[filename]
+        binary_data = output_block.block_bytes
+        output_filename = (
+            filename.rstrip(".bin") + "." + output_block.block_name + ".bin"
+        )
+        Path(output_path, output_filename).write_bytes(binary_data)
+    callback(100)
+
+
+class VWFlashFrame(wx.Frame):
     def __init__(self):
         wx.Frame.__init__(self, parent=None, title="VW_Flash GUI", size=(640, 770))
         self.panel = FlashPanel(self)
@@ -825,7 +881,7 @@ class VW_Flash_Frame(wx.Frame):
 
             self.Bind(
                 wx.EVT_MENU,
-                lambda evt, temp=mode: self.on_select_logging_mode(evt, temp),
+                lambda evt, temp=mode: self.on_select_logging_mode(temp),
                 source=radio_item,
             )
 
@@ -851,7 +907,7 @@ class VW_Flash_Frame(wx.Frame):
     def on_select_unlock(self, event):
         module = self.panel.module_choice.GetSelection()
         if module not in [0, 1]:
-            self.panel.log_to_window("This module does not require unlocking!\n")
+            log_to_window("This module does not require unlocking!\n")
             return
 
         dlg = UnlockDialog(
@@ -860,7 +916,7 @@ class VW_Flash_Frame(wx.Frame):
         res = dlg.ShowModal()
         if res > 0:
             if self.selected_unlock == "":
-                self.panel.log_to_window("No FRF selected, aborting unlock!\n")
+                log_to_window("No FRF selected, aborting unlock!\n")
                 return
             self.panel.flash_unlock(self.selected_unlock)
         dlg.Destroy()
@@ -933,7 +989,7 @@ class VW_Flash_Frame(wx.Frame):
 
         dialog_interfaces = []
         self.panel.interfaces = list(
-            filter(lambda interface: interface[0] is not None, self.panel.interfaces)
+            filter(lambda interfaces: interfaces[0] is not None, self.panel.interfaces)
         )
         for interface in self.panel.interfaces:
             dialog_interfaces.append(interface[0])
@@ -947,57 +1003,10 @@ class VW_Flash_Frame(wx.Frame):
                 1
             ]
             write_config(self.panel.options)
-            logger.info("User selected: " + self.panel.options["interface"])
+            logger.info("User selected interface: " + self.panel.options["interface"])
         dlg.Destroy()
 
-    def try_extract_frf(self, frf_data: bytes):
-        flash_infos = [
-            simos18.s18_flash_info,
-            simos1810.s1810_flash_info,
-            dq250mqb.dsg_flash_info,
-            dq381.dsg_flash_info,
-            haldex4motion.haldex_flash_info,
-            simos184.s1841_flash_info,
-            simos16.s16_flash_info,
-            simos12.s12_flash_info,
-            simos122.s122_flash_info,
-            simos10.s10_flash_info,
-            simos8.s8_flash_info,
-        ]
-        for flash_info in flash_infos:
-            try:
-                (flash_data, allowed_boxcodes) = extract_flash.extract_flash_from_frf(
-                    frf_data,
-                    flash_info,
-                    is_dsg=(flash_info is dq250mqb.dsg_flash_info),
-                )
-                output_blocks = {}
-                for i in flash_info.block_names_frf.keys():
-                    filename = flash_info.block_names_frf[i]
-                    output_blocks[filename] = constants.BlockData(
-                        i, flash_data[filename], flash_info.number_to_block_name[i]
-                    )
-                return [output_blocks, flash_info]
-            except:
-                pass
-
-    def extract_frf_task(self, frf_path: str, output_path: str, callback):
-        frf_name = str.removesuffix(frf_path, ".frf")
-        [output_blocks, flash_info] = self.try_extract_frf(Path(frf_path).read_bytes())
-        outfile_data = binfile.bin_from_blocks(output_blocks, flash_info)
-        callback(50)
-        Path(output_path, Path(frf_name).name + ".bin").write_bytes(outfile_data)
-
-        for filename in output_blocks:
-            output_block: constants.BlockData = output_blocks[filename]
-            binary_data = output_block.block_bytes
-            output_filename = (
-                filename.rstrip(".bin") + "." + output_block.block_name + ".bin"
-            )
-            Path(output_path, output_filename).write_bytes(binary_data)
-        callback(100)
-
-    def on_select_extract_frf(self, event):
+    def on_select_extract_frf(self):
         title = "Choose an FRF file:"
         dlg = wx.FileDialog(self, title, style=wx.FD_DEFAULT_STYLE, wildcard="*.frf")
         if dlg.ShowModal() == wx.ID_OK:
@@ -1018,7 +1027,7 @@ class VW_Flash_Frame(wx.Frame):
                     progress_dialog.Update, progress
                 )
                 frf_thread = threading.Thread(
-                    target=self.extract_frf_task,
+                    target=extract_frf_task,
                     args=(frf_file, output_dir, callback),
                 )
                 frf_thread.start()
@@ -1028,5 +1037,5 @@ class VW_Flash_Frame(wx.Frame):
 
 if __name__ == "__main__":
     app = wx.App(False)
-    frame = VW_Flash_Frame()
+    frame = VWFlashFrame()
     app.MainLoop()
