@@ -1006,7 +1006,7 @@ class VWFlashFrame(wx.Frame):
             logger.info("User selected interface: " + self.panel.options["interface"])
         dlg.Destroy()
 
-    def on_select_extract_frf(self):
+    def on_select_extract_frf(self, event):
         title = "Choose an FRF file:"
         dlg = wx.FileDialog(self, title, style=wx.FD_DEFAULT_STYLE, wildcard="*.frf")
         if dlg.ShowModal() == wx.ID_OK:
