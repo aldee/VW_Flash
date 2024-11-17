@@ -25,6 +25,7 @@ from lib import flash_uds
 from lib import haldex_flash_utils
 from lib import simos_flash_utils
 from lib import simos_hsl
+from lib.constants import BlockData
 from lib.modules import (
     simos8,
     simos10,
@@ -236,6 +237,8 @@ class FlashPanel(wx.Panel):
                 "activitylevel": "INFO",
             }
             write_config(self.options)
+
+        self.flash_utils = simos_flash_utils
 
         self.interfaces = poll_interfaces()
 
@@ -653,13 +656,13 @@ class FlashPanel(wx.Panel):
     def flash_bin(self, get_info=True, should_patch_cboot=False):
         (interface, interface_path) = split_interface_name(self.options["interface"])
         if module_selection_is_dq250(self.module_choice.GetSelection()):
-            flash_utils = dsg_flash_utils
+            self.flash_utils = dsg_flash_utils
         elif module_selection_is_dq381(self.module_choice.GetSelection()):
-            flash_utils = dq381_flash_utils
+            self.flash_utils = dq381_flash_utils
         elif module_selection_is_haldex(self.module_choice.GetSelection()):
-            flash_utils = haldex_flash_utils
+            self.flash_utils = haldex_flash_utils
         else:
-            flash_utils = simos_flash_utils
+            self.flash_utils = simos_flash_utils
 
         log_to_window(
             "Starting to flash the following software components : \n"
@@ -729,7 +732,7 @@ class FlashPanel(wx.Panel):
         stmin_override = self.options.get("stmin_override", DEFAULT_STMIN)
 
         flasher_thread = threading.Thread(
-            target=flash_utils.flash_bin,
+            target=self.flash_utils.flash_bin,
             args=(
                 self.flash_info,
                 self.input_blocks,
@@ -793,6 +796,25 @@ def extract_frf_task(frf_path: str, output_path: str, callback):
     callback(100)
 
 
+def extract_bin_task(bin_path: str, output_path: str, flash_info, callback, flash_utils=simos_flash_utils):
+    input_blocks = binfile.blocks_from_bin(bin_path, flash_info)
+    logger.info(binfile.input_block_info(input_blocks, flash_info))
+
+    output_blocks = flash_utils.checksum_and_patch_blocks(
+        flash_info,
+        input_blocks,
+        should_patch_cboot=False
+    )
+
+    for filename in output_blocks:
+        output_block: BlockData = output_blocks[filename]
+        binary_data = output_block.block_bytes
+        block_number = output_block.block_number
+        file_name = filename.rstrip(".bin") + "." + output_block.block_name + ".bin"
+        Path(output_path, file_name).write_bytes(binary_data)
+
+    callback(100)
+
 class VWFlashFrame(wx.Frame):
     def __init__(self):
         wx.Frame.__init__(self, parent=None, title="VW_Flash GUI", size=(640, 770))
@@ -814,14 +836,23 @@ class VWFlashFrame(wx.Frame):
         extract_frf_menu_item = file_menu.Append(
             wx.ID_ANY, "Extract FRF...", "Extract an FRF file"
         )
+        extract_bin_menu_item = file_menu.Append(
+            wx.ID_ANY, "Extract BIN...", "Extract a FULL BIN file"
+        )
+
         menu_bar.Append(file_menu, "&File")
         self.Bind(
-            event=wx.EVT_MENU, handler=self.on_open_folder, source=open_folder_menu_item
+            event=wx.EVT_MENU, handler=self.on_open_folder, source=open_folder_menu_item,
         )
         self.Bind(
             event=wx.EVT_MENU,
             handler=self.on_select_extract_frf,
             source=extract_frf_menu_item,
+        )
+        self.Bind(
+            event=wx.EVT_MENU,
+            handler=self.on_select_extract_bin,
+            source=extract_bin_menu_item
         )
 
         unlock_ecu_menu_item = file_menu.Append(
@@ -1034,6 +1065,33 @@ class VWFlashFrame(wx.Frame):
                 progress_dialog.Pulse()
                 progress_dialog.Show()
 
+    def on_select_extract_bin(self, event):
+        title = "Choose an BIN file:"
+        dlg = wx.FileDialog(self, title, style=wx.FD_DEFAULT_STYLE, wildcard="*.bin")
+        if dlg.ShowModal() == wx.ID_OK:
+            bin_file = dlg.GetPath()
+            dlg.Destroy()
+            title = "Choose an output directory:"
+            dlg = wx.DirDialog(self, title)
+            if dlg.ShowModal() == wx.ID_OK:
+                output_dir = dlg.GetPath()
+                progress_dialog = wx.ProgressDialog(
+                    "Extracting FULL BIN",
+                    "Decrypting and unpacking...",
+                    maximum=100,
+                    parent=self,
+                    style=wx.PD_APP_MODAL | wx.PD_AUTO_HIDE,
+                )
+                callback = lambda progress: wx.CallAfter(
+                    progress_dialog.Update, progress
+                )
+                bin_extract_thread = threading.Thread(
+                    target=extract_bin_task,
+                    args=(bin_file, output_dir, self.panel.flash_info, callback, self.panel.flash_utils),
+                )
+                bin_extract_thread.start()
+                progress_dialog.Pulse()
+                progress_dialog.Show()
 
 if __name__ == "__main__":
     app = wx.App(False)
