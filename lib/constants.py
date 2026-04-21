@@ -232,9 +232,12 @@ data_records: List[DataRecord] = [
     DataRecord(0xF17E, 0, "ECU Production Change Number"),
 ]
 
-j2534DLL = (
-    "C:/Program Files (x86)/OpenECU/OpenPort 2.0/drivers/openport 2.0/op20pt32.dll"
-)
+if sys.platform == "win32":
+    j2534DLL = (
+        "C:/Program Files (x86)/OpenECU/OpenPort 2.0/drivers/openport 2.0/op20pt32.dll"
+    )
+else:
+    j2534DLL = "/usr/local/lib/libop20pt32.dylib"
 
 
 # test data for the FakeConnection

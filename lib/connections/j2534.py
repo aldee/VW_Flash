@@ -1,7 +1,6 @@
 import ctypes
 from ctypes import (
     Structure,
-    WINFUNCTYPE,
     POINTER,
     c_long,
     c_void_p,
@@ -9,6 +8,11 @@ from ctypes import (
     byref,
     pointer,
 )
+
+try:
+    from ctypes import WINFUNCTYPE
+except ImportError:
+    from ctypes import CFUNCTYPE as WINFUNCTYPE
 
 from enum import Enum
 

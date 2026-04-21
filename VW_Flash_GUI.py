@@ -142,8 +142,13 @@ def poll_interfaces():
 
     if sys.platform == "win32":
         interfaces += get_dlls_from_registry()
-    if sys.platform == "linux":
+    elif sys.platform == "linux":
         interfaces += socketcan_ports()
+    elif sys.platform == "darwin":
+        # On macOS, J2534 doesn't have a standard registry.
+        # We could potentially look in /usr/local/lib for known drivers.
+        if path.exists(constants.j2534DLL):
+            interfaces.append(("OpenPort 2.0 (J2534)", "J2534_" + constants.j2534DLL))
 
     serial_ports = serial.tools.list_ports.comports()
     for port in serial_ports:
@@ -555,7 +560,7 @@ class FlashPanel(wx.Panel):
         modal_response = wx.MessageDialog(
             None,
             "Are you sure you want to flash: "
-            + file_name.rsplit("\\", 1)[-1]
+            + path.basename(file_name)
             + "\n"
             + "To module: "
             + self.module_choice.GetString(module)

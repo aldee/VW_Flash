@@ -52,6 +52,8 @@ logger.info("Starting VW_Flash.py")
 
 if sys.platform == "win32":
     defaultInterface = "J2534"
+elif sys.platform == "darwin":
+    defaultInterface = "TEST"
 else:
     defaultInterface = "SocketCAN_can0"
 
