@@ -49,6 +49,7 @@ class hsl_logger:
         singleCSV=False,
         interfacePath=None,
         displayGauges=False,
+        paramFile=None,
     ):
         # set defaults
         self.activityLogger = logging.getLogger("SimosHSL")
@@ -222,7 +223,10 @@ class hsl_logger:
             self.activityLogger.info("Calculate HP: Accelerometer TQ")
 
         # open params file
-        self.PARAMFILE = self.filePath + param_file
+        if paramFile:
+            self.PARAMFILE = paramFile
+        else:
+            self.PARAMFILE = self.filePath + param_file
         self.activityLogger.info("Parameter file: " + self.PARAMFILE)
         self.logParams = {}
         self.assignments = {}

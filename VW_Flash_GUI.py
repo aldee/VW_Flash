@@ -788,8 +788,9 @@ class VW_Flash_Frame(wx.Frame):
         wx.Frame.__init__(self, parent=None, title="VW_Flash GUI", size=(640, 770))
         self.panel = FlashPanel(self)
         self.create_menu()
-        self.statusbar = self.CreateStatusBar(1)
-        self.statusbar.SetStatusText("Choose a bin file directory")
+        self.statusbar = self.CreateStatusBar(2)
+        self.statusbar.SetStatusText("Choose a bin file directory", 0)
+        self.update_param_file_status()
         self.hsl_logger = None
         self.selected_unlock = None
         self.Show()
@@ -870,6 +871,16 @@ class VW_Flash_Frame(wx.Frame):
             event=wx.EVT_MENU,
             handler=self.select_logger_path,
             source=logger_path_menu_item,
+        )
+        param_file_menu_item = logger_menu.Append(
+            wx.ID_ANY,
+            "Select parameter file...",
+            "Select CSV file for logger parameters.",
+        )
+        self.Bind(
+            event=wx.EVT_MENU,
+            handler=self.select_param_file,
+            source=param_file_menu_item,
         )
         logger_menu_item = logger_menu.Append(
             wx.ID_ANY, "Start Logger", "Start Simos High Speed Logger"
@@ -970,6 +981,22 @@ class VW_Flash_Frame(wx.Frame):
             write_config(self.panel.options)
         dlg.Destroy()
 
+    def select_param_file(self, event):
+        title = "Choose a parameter file:"
+        dlg = wx.FileDialog(self, title, style=wx.FD_DEFAULT_STYLE, wildcard="*.csv")
+        if dlg.ShowModal() == wx.ID_OK:
+            self.panel.options["param_file"] = dlg.GetPath()
+            write_config(self.panel.options)
+            self.update_param_file_status()
+        dlg.Destroy()
+
+    def update_param_file_status(self):
+        param_file = self.panel.options.get("param_file", "")
+        if param_file:
+            self.statusbar.SetStatusText(f"Param: {path.basename(param_file)}", 1)
+        else:
+            self.statusbar.SetStatusText("Param: None", 1)
+
     def on_start_logger(self, event):
         if self.hsl_logger is not None:
             return
@@ -991,6 +1018,7 @@ class VW_Flash_Frame(wx.Frame):
             singleCSV=self.panel.options["singlecsv"],
             interfacePath=interface_path,
             displayGauges=False,
+            paramFile=self.panel.options.get("param_file", None),
         )
 
         logger_thread = threading.Thread(target=self.hsl_logger.startLogger)
