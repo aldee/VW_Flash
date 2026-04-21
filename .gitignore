@@ -140,3 +140,10 @@ cython_debug/
 # Built lzss binary on Unix/MacOS
 lib/lzss/lzss
 gui_config.json
+ 
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
