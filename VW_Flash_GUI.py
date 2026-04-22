@@ -111,24 +111,24 @@ def split_interface_name(interface_string: str):
 def get_dlls_from_registry():
     # Interfaces is a list of tuples (name: str, interface specifier: str)
     interfaces = []
-    try:
-        BaseKey = winreg.OpenKeyEx(
-            winreg.HKEY_LOCAL_MACHINE, r"Software\\PassThruSupport.04.04\\"
-        )
-    except OSError:
-        logger.error("No J2534 DLLs found in HKLM PassThruSupport. Continuing anyway.")
-        return interfaces
-
-    for i in range(winreg.QueryInfoKey(BaseKey)[0]):
+    
+    # Check both 64-bit and 32-bit registry views
+    for access in [winreg.KEY_READ | winreg.KEY_WOW64_64KEY, winreg.KEY_READ | winreg.KEY_WOW64_32KEY]:
         try:
-            DeviceKey = winreg.OpenKeyEx(BaseKey, winreg.EnumKey(BaseKey, i))
-            Name = winreg.QueryValueEx(DeviceKey, "Name")[0]
-            FunctionLibrary = winreg.QueryValueEx(DeviceKey, "FunctionLibrary")[0]
-            interfaces.append((Name, "J2534_" + FunctionLibrary))
-        except OSError:
-            logger.error(
-                "Found a J2534 interface, but could not enumerate the registry entry. Continuing."
+            BaseKey = winreg.OpenKeyEx(
+                winreg.HKEY_LOCAL_MACHINE, r"Software\\PassThruSupport.04.04\\", access=access
             )
+        except OSError:
+            continue
+
+        for i in range(winreg.QueryInfoKey(BaseKey)[0]):
+            try:
+                DeviceKey = winreg.OpenKeyEx(BaseKey, winreg.EnumKey(BaseKey, i))
+                Name = winreg.QueryValueEx(DeviceKey, "Name")[0]
+                FunctionLibrary = winreg.QueryValueEx(DeviceKey, "FunctionLibrary")[0]
+                interfaces.append((Name, "J2534_" + FunctionLibrary))
+            except OSError:
+                continue
     return interfaces
 
 
@@ -1007,19 +1007,25 @@ class VW_Flash_Frame(wx.Frame):
         (interface, interface_path) = split_interface_name(
             self.panel.options["interface"]
         )
-        self.hsl_logger = simos_hsl.hsl_logger(
-            runServer=False,
-            interactive=False,
-            mode=self.panel.options["logmode"],
-            level=self.panel.options["activitylevel"],
-            path=self.panel.options["logger"] + "/",
-            callbackFunction=self.panel.update_callback,
-            interface=interface,
-            singleCSV=self.panel.options["singlecsv"],
-            interfacePath=interface_path,
-            displayGauges=False,
-            paramFile=self.panel.options.get("param_file", None),
-        )
+        try:
+            self.hsl_logger = simos_hsl.hsl_logger(
+                runServer=False,
+                interactive=False,
+                mode=self.panel.options["logmode"],
+                level=self.panel.options["activitylevel"],
+                path=self.panel.options["logger"] + "/",
+                callbackFunction=self.panel.update_callback,
+                interface=interface,
+                singleCSV=self.panel.options["singlecsv"],
+                interfacePath=interface_path,
+                displayGauges=False,
+                paramFile=self.panel.options.get("param_file", None),
+            )
+        except Exception as e:
+            logger.error("Failed to start logger", exc_info=True)
+            wx.CallAfter(show_error_dialog, type(e).__name__, str(e))
+            self.hsl_logger = None
+            return
 
         logger_thread = threading.Thread(target=self.hsl_logger.startLogger)
         logger_thread.daemon = True

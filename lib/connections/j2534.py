@@ -68,7 +68,16 @@ class J2534:
         global dllPassThruStartMsgFilter
         global dllPassThruIoctl
 
-        self.hDLL = ctypes.cdll.LoadLibrary(windll)
+        try:
+            self.hDLL = ctypes.cdll.LoadLibrary(windll)
+        except OSError as e:
+            if "[WinError 193]" in str(e):
+                raise OSError(
+                    f"Could not load J2534 DLL: {windll}. This is likely due to an architecture mismatch "
+                    "(e.g., trying to load a 32-bit DLL with 64-bit Python). Please ensure you are "
+                    "using a Python version (32-bit or 64-bit) that matches your J2534 driver."
+                ) from e
+            raise e
         self.rxid = rxid.to_bytes(4, "big")
         self.txid = txid.to_bytes(4, "big")
 
